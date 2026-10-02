@@ -1,0 +1,39 @@
+[project]
+name = "copilot1c-web"
+version = "0.1.0"
+description = "Веб-интерфейс 1С Project Copilot: чат с источниками и загрузка материалов"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    # Ядро: разбор материалов, индекс, агент. Версия фиксируется в uv.lock (коммит ядра).
+    "1c-copilot @ git+https://github.com/dxs000/1c-copilot@main",
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "ruff>=0.5", "httpx>=0.27"]
+
+[project.scripts]
+copilot1c-web = "copilot1c_web.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/copilot1c_web"]
+
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[tool.ruff]
+line-length = 125
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]

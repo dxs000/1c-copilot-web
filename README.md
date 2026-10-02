@@ -1,0 +1,36 @@
+# 1С Project Copilot — веб-интерфейс
+
+Веб-часть [1С Project Copilot](https://github.com/dxs000/1c-copilot): чат с источниками и загрузка
+материалов в браузере. Разбор писем и документов, индекс в Yandex AI Studio, агент и PostgreSQL —
+в ядре `1c-copilot`; этот проект подключает его зависимостью из git (коммит зафиксирован в `uv.lock`)
+и запускает HTTP-сервер.
+
+Пилот: `http://magic.lcl` (порт 80) на локальном Linux-хосте, PostgreSQL на том же хосте.
+
+| Шаг | Что | Статус |
+| --- | --- | --- |
+| 1 | Экраны «Чат» и «Материалы», состояние системы (`/api/health`), сервис на порту 80 | готово |
+| 2 | Ответы агента в чате, карточки и просмотр источников | — |
+| 3 | Загрузка материалов через браузер, очередь и отчёт разбора | — |
+
+## Запуск для разработки
+
+```bash
+uv sync --extra dev
+uv run pytest
+uv run copilot1c-web --port 8080 --reload     # http://localhost:8080
+```
+
+Настройки (ключи Yandex, `COPILOT_VECTOR_STORE_ID`, `COPILOT_PG_DSN`) читаются ядром из `.env` в
+рабочем каталоге — см. `.env.example`.
+
+## Развёртывание
+
+На Linux-хосте как сервис systemd на порту 80 — [deploy/README.md](deploy/README.md).
+
+## Обновление ядра
+
+```bash
+uv lock --upgrade-package 1c-copilot   # взять свежий main ядра
+uv sync
+```

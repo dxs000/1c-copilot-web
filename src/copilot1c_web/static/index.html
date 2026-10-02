@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Чат — 1С Project Copilot</title>
+<link rel="stylesheet" href="/static/style.css">
+<link rel="icon" href="data:,">
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="/">
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#0B6B63" stroke-width="1.8" aria-hidden="true"><rect x="3" y="4" width="18" height="14" rx="3"/><path d="M8 21h8M8 9h8M8 13h5"/></svg>
+    1С Project Copilot
+  </a>
+  <span class="project">Проект: <b id="project">…</b></span>
+  <nav class="tabs" aria-label="Разделы">
+    <a href="/" aria-current="page">Чат</a>
+    <a href="/materials">Материалы</a>
+  </nav>
+  <div class="status" id="status" aria-live="polite"><span class="pill">проверяю систему…</span></div>
+</header>
+
+<div class="chat">
+  <aside class="history" aria-label="История вопросов">
+    <button class="btn outline" type="button" id="new">+ Новый вопрос</button>
+    <h2>В этой сессии</h2>
+    <ul id="history"></ul>
+  </aside>
+
+  <main class="dialog">
+    <section class="messages" id="messages" aria-live="polite">
+      <div class="empty" id="empty">
+        <h1>Спросите о проекте</h1>
+        <p>Переписка, ТЗ, допсоглашения, ПиМИ — ответ со ссылками на источники.</p>
+      </div>
+    </section>
+
+    <div class="composer">
+      <form id="ask">
+        <div class="chips" aria-label="Примеры вопросов">
+          <button type="button">Почему обновляемся на 11.5.27.75, а не на 11.6?</button>
+          <button type="button">Какие ПиМИ покрывают пункт 64 плана тестирования?</button>
+          <button type="button">Что вычеркнули из ДС № 10?</button>
+        </div>
+        <div class="row">
+          <label class="visually-hidden" for="q">Вопрос</label>
+          <textarea id="q" rows="2" placeholder="Спросите о проекте: переписка, ТЗ, ДС, ПиМИ…" required></textarea>
+          <button class="btn primary" type="submit" id="send">Спросить</button>
+        </div>
+      </form>
+    </div>
+  </main>
+</div>
+<script src="/static/app.js"></script>
+</body>
+</html>

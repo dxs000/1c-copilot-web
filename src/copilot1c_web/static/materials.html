@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Материалы — 1С Project Copilot</title>
+<link rel="stylesheet" href="/static/style.css">
+<link rel="icon" href="data:,">
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="/">
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#0B6B63" stroke-width="1.8" aria-hidden="true"><rect x="3" y="4" width="18" height="14" rx="3"/><path d="M8 21h8M8 9h8M8 13h5"/></svg>
+    1С Project Copilot
+  </a>
+  <span class="project">Проект: <b id="project">…</b></span>
+  <nav class="tabs" aria-label="Разделы">
+    <a href="/">Чат</a>
+    <a href="/materials" aria-current="page">Материалы</a>
+  </nav>
+  <div class="status" id="status" aria-live="polite"><span class="pill">проверяю систему…</span></div>
+</header>
+
+<div class="page">
+  <main>
+    <h1>Материалы проекта</h1>
+    <div class="drop" aria-disabled="true">
+      <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#0B6B63" stroke-width="1.6" aria-hidden="true"><path d="M12 16V4M7 9l5-5 5 5M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/></svg>
+      <strong>Перетащите файлы сюда или выберите на компьютере</strong>
+      <small>Письма .msg и .eml со вложениями, документы .docx, .pdf, .xlsx, старые .doc и .xls, архивы .zip. Скриншоты и сканы распознаются автоматически.</small>
+      <button class="btn primary" type="button" disabled>Выбрать файлы</button>
+    </div>
+    <p class="notice">Загрузка через веб подключается на шаге 3. Сейчас материалы индексируются командой
+      <span class="mono">copilot1c index-docs &lt;папка&gt;</span> на этом хосте.</p>
+  </main>
+
+  <aside>
+    <section class="card">
+      <h2>В индексе проекта</h2>
+      <div class="stats">
+        <div class="stat"><b id="s-chunks">—</b><span>фрагментов в Vector Store</span></div>
+        <div class="stat"><b id="s-pg-chunks">—</b><span>фрагментов в PostgreSQL</span></div>
+        <div class="stat"><b id="s-tc">—</b><span>тест-кейсов ПиМИ</span></div>
+        <div class="stat"><b id="s-req">—</b><span>пунктов плана тестирования</span></div>
+      </div>
+    </section>
+    <section class="card" style="margin-top: 16px">
+      <h2>Состояние системы</h2>
+      <ul class="checks">
+        <li><span>Yandex AI Studio</span><span class="val" id="c-yandex">—</span></li>
+        <li><span>Vector Store</span><span class="val" id="c-index">—</span></li>
+        <li><span>PostgreSQL</span><span class="val" id="c-pg">—</span></li>
+        <li><span>Распознавание картинок</span><span class="val" id="c-ocr">—</span></li>
+        <li><span>Версия</span><span class="val mono" id="c-version">—</span></li>
+      </ul>
+    </section>
+  </aside>
+</div>
+<script src="/static/app.js"></script>
+</body>
+</html>
