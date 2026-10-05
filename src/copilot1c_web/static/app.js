@@ -31,7 +31,11 @@ async function loadHealth() {
     const r = await fetch("/api/health", { cache: "no-store" });
     const h = await r.json();
     setText("project", h.project);
-    box.replaceChildren(
+    if (h.core && !h.core.ok) {
+      // демон ядра не отвечает — одна понятная метка вместо трёх ложных «нет ключей / индекса / базы»
+      box.replaceChildren(pill("ядро недоступно", "bad"));
+      box.title = `Нет ответа от ${h.core.url}. Проверьте службу: systemctl status copilot1c-core`;
+    } else box.replaceChildren(
       pill(h.yandex.configured ? "Yandex AI Studio" : "нет ключей Yandex", h.yandex.configured ? "ok" : "bad"),
       pill(h.index.configured ? `индекс: ${h.index.chunks}` : "индекс не задан", h.index.configured ? "ok" : "bad"),
       pill(h.postgres.ok ? "PostgreSQL" : "PostgreSQL недоступен", h.postgres.ok ? "ok" : "bad"),

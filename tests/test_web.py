@@ -22,21 +22,37 @@ def test_pages_and_static(monkeypatch, tmp_path):
         assert r.status_code == 200 and marker in r.text, path
 
 
-def test_health_without_keys_and_postgres(monkeypatch, tmp_path):
-    h = _client(monkeypatch, tmp_path, yc_api_key="", yc_folder_id="").get("/api/health").json()
-    assert h["yandex"]["configured"] is False
-    assert h["index"] == {"configured": False, "chunks": 0}
-    assert h["postgres"]["ok"] is False and h["postgres"]["detail"] == "нет подключения"
-    assert h["project"] == "ut11-update"
+CORE_HEALTH = {"status": "ok", "version": "0.1.0", "project": "ut11-update", "checks": {
+    "ai_studio": {"ok": True, "folder": "b1g", "model": "gpt-oss-120b/latest"},
+    "vector_store": {"ok": True, "id": "vs1", "manifest": True, "chunks": 1100},
+    "postgres": {"ok": True, "tables": 12, "chunks": 1100, "test_cases": 68, "requirements": 341,
+                 "host": "localhost:5432/copilot"},
+    "platform_1c": {"ok": False, "optional": True}, "ocr": {"ok": True, "backend": "yandex", "optional": True}}}
 
 
-def test_health_counts_manifest(monkeypatch, tmp_path):
-    (tmp_path / "vector_store").mkdir()
-    (tmp_path / "vector_store" / "vs1.json").write_text('{"a": "f1", "b": "f2"}', encoding="utf-8")
-    h = _client(monkeypatch, tmp_path, yc_api_key="k", yc_folder_id="f", vector_store_id="vs1").get("/api/health").json()
-    assert h["yandex"]["configured"] is True and h["index"] == {"configured": True, "chunks": 2}
+def test_health_from_core_keeps_web_format(monkeypatch, tmp_path):
+    c = _client(monkeypatch, tmp_path)
+    monkeypatch.setattr(web, "_core_health", lambda: CORE_HEALTH)
+    h = c.get("/api/health").json()
+    assert h["core"]["ok"] is True and h["core_version"] == "0.1.0" and h["project"] == "ut11-update"
+    assert h["yandex"] == {"configured": True, "model": "gpt-oss-120b/latest"}
+    assert h["index"] == {"configured": True, "chunks": 1100} and h["ocr"] == "yandex"
+    assert h["postgres"] == {"ok": True, "where": "localhost:5432/copilot", "chunks": 1100, "test_cases": 68,
+                             "requirements": 341}
 
 
+def test_health_when_core_is_down(monkeypatch, tmp_path):
+    import httpx
+
+    c = _client(monkeypatch, tmp_path)
+
+    def refused(*a, **kw):
+        raise httpx.ConnectError("Connection refused")
+
+    monkeypatch.setattr(httpx, "get", refused)
+    h = c.get("/api/health").json()
+    assert h["core"]["ok"] is False and h["index"] == {"configured": False, "chunks": 0}
+    assert h["postgres"]["detail"] == "ядро недоступно" and h["project"] == "ut11-update"
 
 
 def _core(monkeypatch, status=200, body=None, exc=None):
@@ -98,7 +114,9 @@ def test_feedback_is_logged(monkeypatch, tmp_path):
 
 
 def test_health_reports_versions(monkeypatch, tmp_path):
-    h = _client(monkeypatch, tmp_path).get("/api/health").json()
+    c = _client(monkeypatch, tmp_path)
+    monkeypatch.setattr(web, "_core_health", lambda: CORE_HEALTH)
+    h = c.get("/api/health").json()
     assert h["version"] == "0.1.0" and h["core_version"] == "0.1.0"
 
 

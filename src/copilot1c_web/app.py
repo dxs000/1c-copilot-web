@@ -14,11 +14,11 @@ import os
 import threading
 import time
 from datetime import datetime
-from importlib import metadata, resources
+from importlib import resources
 from pathlib import Path
 
 import httpx
-from copilot1c.config import Settings, get_settings
+from copilot1c.config import get_settings
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -35,58 +35,43 @@ STARTED = time.time()
 _LOG_LOCK = threading.Lock()
 
 
-def _core_version() -> str:
-    try:
-        return metadata.version("1c-copilot")
-    except metadata.PackageNotFoundError:
-        return "?"
-
 app = FastAPI(title="1С Project Copilot", version=__version__, docs_url="/api/docs", redoc_url=None)
 app.mount("/static", StaticFiles(directory=STATIC), name="static")
 
 
-def _pg_status(s: Settings) -> dict:
-    """PostgreSQL: доступен ли и сколько в нём данных. Не роняет страницу, если базы нет."""
-    from copilot1c.graph.store import try_connect
-
-    host = s.pg_dsn.split("@")[-1]
-    g = try_connect(s)
-    if g is None:
-        return {"ok": False, "where": host, "detail": "нет подключения"}
+def _core_health() -> dict | None:
+    """Состояние ядра от демона; None — демон недоступен."""
     try:
-        rows = g.query("SELECT (SELECT count(*) FROM chunks) AS chunks, (SELECT count(*) FROM test_cases) AS test_cases,"
-                       " (SELECT count(*) FROM requirements) AS requirements")
-        return {"ok": True, "where": host, **rows[0]}
-    except Exception as exc:  # noqa: BLE001 — база есть, но схема не создана
-        return {"ok": True, "where": host, "detail": f"схема не создана (copilot1c init-db): {type(exc).__name__}"}
-    finally:
-        g.close()
-
-
-def _index_status(s: Settings) -> dict:
-    if not s.vector_store_id:
-        return {"configured": False, "chunks": 0}
-    from copilot1c.index.yandex import VectorIndex
-
-    return {"configured": True, "chunks": len(VectorIndex(s.vector_store_id, s).load_manifest())}
+        r = httpx.get(f"{CORE_URL}/health", timeout=10)
+        return r.json() if r.status_code == 200 else None
+    except (httpx.HTTPError, ValueError):
+        return None
 
 
 @app.get("/api/health")
 def health() -> JSONResponse:
-    s = get_settings()
-    from copilot1c.ingest.ocr import backend
-
-    body = {
-        "version": __version__,
-        "core_version": _core_version(),
-        "now": datetime.now().astimezone().isoformat(timespec="seconds"),
-        "uptime_s": int(time.time() - STARTED),
-        "project": s.project,
-        "yandex": {"configured": bool(s.yc_api_key and s.yc_folder_id), "model": s.model_orchestrator},
-        "index": _index_status(s),
-        "postgres": _pg_status(s),
-        "ocr": backend(s),
-    }
+    """Состояние системы для шапки и экрана «Материалы» — по данным демона ядра, в прежнем формате."""
+    body: dict = {"version": __version__, "now": datetime.now().astimezone().isoformat(timespec="seconds"),
+                  "uptime_s": int(time.time() - STARTED)}
+    core = _core_health()
+    if core is None:
+        body.update({"core": {"ok": False, "url": CORE_URL}, "core_version": "?", "project": get_settings().project,
+                     "yandex": {"configured": False, "model": ""}, "index": {"configured": False, "chunks": 0},
+                     "postgres": {"ok": False, "where": "", "detail": "ядро недоступно"}, "ocr": "?"})
+        return JSONResponse(body)
+    c = core.get("checks", {})
+    ai, vs, pg = c.get("ai_studio", {}), c.get("vector_store", {}), c.get("postgres", {})
+    postgres = {"ok": pg.get("ok", False), "where": pg.get("host", "")}
+    postgres.update({k: pg[k] for k in ("chunks", "test_cases", "requirements", "detail") if k in pg})
+    body.update({
+        "core": {"ok": True, "url": CORE_URL, "status": core.get("status")},
+        "core_version": core.get("version", "?"),
+        "project": core.get("project", ""),
+        "yandex": {"configured": ai.get("ok", False), "model": ai.get("model", "")},
+        "index": {"configured": vs.get("ok", False), "chunks": vs.get("chunks", 0)},
+        "postgres": postgres,
+        "ocr": c.get("ocr", {}).get("backend", "?"),
+    })
     return JSONResponse(body)
 
 
