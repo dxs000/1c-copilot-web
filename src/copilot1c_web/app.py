@@ -16,10 +16,11 @@ import time
 from datetime import datetime
 from importlib import resources
 from pathlib import Path
+from typing import Annotated
 
 import httpx
 from copilot1c.config import get_settings
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -134,9 +135,45 @@ def feedback(req: FeedbackRequest) -> dict:
     return {"ok": True}
 
 
+MAX_UPLOAD_FILES = 20
+
+
+def _core_call(method: str, path: str, **kw) -> dict:
+    """Запрос к демону ядра с понятными ошибками: недоступен → 503, таймаут → 504, ошибка ядра — как есть."""
+    try:
+        r = httpx.request(method, f"{CORE_URL}{path}", timeout=CORE_TIMEOUT, **kw)
+    except httpx.TimeoutException as exc:
+        raise HTTPException(504, f"Ядро не ответило за {CORE_TIMEOUT} с") from exc
+    except httpx.HTTPError as exc:
+        raise HTTPException(503, f"Ядро недоступно ({CORE_URL}). Проверьте службу: systemctl status copilot1c-core") \
+            from exc
+    try:
+        data = r.json()
+    except ValueError:
+        data = {}
+    if r.status_code != 200:
+        detail = data.get("detail") if isinstance(data.get("detail"), str) else f"Ошибка ядра: HTTP {r.status_code}"
+        raise HTTPException(r.status_code, detail)
+    return data
+
+
 @app.post("/api/upload")
-def upload() -> JSONResponse:
-    return JSONResponse({"stub": True, "detail": "Загрузка материалов подключается на шаге 3."}, status_code=501)
+def upload(files: Annotated[list[UploadFile], File()]) -> dict:
+    """Файлы из браузера → демон ядра (POST /materials): сохранение, реестр, очередь обработки."""
+    if len(files) > MAX_UPLOAD_FILES:
+        raise HTTPException(413, f"Не больше {MAX_UPLOAD_FILES} файлов за раз")
+    parts = [("files", (f.filename or "файл", f.file.read(), f.content_type or "application/octet-stream"))
+             for f in files]
+    data = _core_call("POST", "/materials", files=parts)
+    _log("uploads", {"files": [{"filename": m.get("filename"), "id": m.get("id"), "error": m.get("error"),
+                                "already_uploaded": m.get("already_uploaded")} for m in data.get("materials", [])]})
+    return data
+
+
+@app.get("/api/materials")
+def materials(limit: int = 200) -> dict:
+    """Реестр загруженных материалов и их статусы (по данным демона ядра)."""
+    return _core_call("GET", "/materials", params={"limit": limit})
 
 
 @app.get("/")

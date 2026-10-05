@@ -24,14 +24,25 @@
 <div class="page">
   <main>
     <h1>Материалы проекта</h1>
-    <div class="drop" aria-disabled="true">
+    <div class="drop" id="drop">
       <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#0B6B63" stroke-width="1.6" aria-hidden="true"><path d="M12 16V4M7 9l5-5 5 5M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/></svg>
       <strong>Перетащите файлы сюда или выберите на компьютере</strong>
-      <small>Письма .msg и .eml со вложениями, документы .docx, .pdf, .xlsx, старые .doc и .xls, архивы .zip. Скриншоты и сканы распознаются автоматически.</small>
-      <button class="btn primary" type="button" disabled>Выбрать файлы</button>
+      <small>Письма .msg и .eml со вложениями, документы .docx, .pdf, .xlsx, старые .doc и .xls, архивы .zip. Скриншоты и сканы распознаются автоматически. До 20 файлов за раз.</small>
+      <input type="file" id="files" multiple hidden
+             accept=".msg,.eml,.docx,.docm,.doc,.rtf,.odt,.pdf,.xlsx,.xlsm,.xls,.ods,.pptx,.ppt,.zip,.txt,.png,.jpg,.jpeg">
+      <button class="btn primary" type="button" id="pick">Выбрать файлы</button>
     </div>
-    <p class="notice">Загрузка через веб подключается на шаге 3. Сейчас материалы индексируются командой
-      <span class="mono">copilot1c index-docs &lt;папка&gt;</span> на этом хосте.</p>
+    <p class="upload-status" id="upload-status" aria-live="polite"></p>
+
+    <section class="card uploads">
+      <div class="uploads-head">
+        <h2>Загруженные через веб</h2>
+        <span class="uploads-live" id="uploads-live"></span>
+      </div>
+      <p class="hint">Каждый файл проходит путь: в очереди → разбор → индексация → запись в базу → готово.
+        Если всё его содержимое уже было в базе (например, документ пришёл раньше вложением письма), статус — «уже есть».</p>
+      <div id="uploads"><p class="hint">Загружаю список…</p></div>
+    </section>
   </main>
 
   <aside>

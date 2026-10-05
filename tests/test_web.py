@@ -80,7 +80,6 @@ def test_ask_proxies_to_core_and_logs(monkeypatch, tmp_path):
     log = [json.loads(x) for x in (tmp_path / "web" / "asks.jsonl").read_text(encoding="utf-8").splitlines()]
     assert log[0]["question"] == "Почему не 11.6?" and log[0]["sources"] == ["Письмо · 2025-03-01"]
     assert c.post("/api/ask", json={"question": "?"}).status_code == 422
-    assert c.post("/api/upload").status_code == 501
 
 
 def test_ask_passes_core_errors_through(monkeypatch, tmp_path):
@@ -129,3 +128,63 @@ def test_cli_defaults_to_port_80(monkeypatch):
     monkeypatch.setattr(uvicorn, "run", lambda app, **kw: seen.update(kw, app=app))
     cli.main([])
     assert seen["port"] == 80 and seen["host"] == "0.0.0.0" and seen["app"] == "copilot1c_web.app:app"
+
+
+def _core_request(monkeypatch, status=200, body=None, exc=None):
+    import httpx
+
+    calls = []
+
+    def fake(method, url, **kw):
+        calls.append({"method": method, "url": url, **kw})
+        if exc:
+            raise exc
+        return httpx.Response(status, json=body if body is not None else {})
+
+    monkeypatch.setattr(httpx, "request", fake)
+    return calls
+
+
+def test_upload_forwards_files_to_core_and_logs(monkeypatch, tmp_path):
+    c = _client(monkeypatch, tmp_path)
+    body = {"materials": [{"id": 1, "filename": "ТЗ.docx", "status": "queued", "already_uploaded": False},
+                          {"filename": "пустой.txt", "error": "пустой файл — не сохранён"}]}
+    calls = _core_request(monkeypatch, 200, body)
+    r = c.post("/api/upload", files=[("files", ("ТЗ.docx", b"docx", "application/octet-stream")),
+                                     ("files", ("пустой.txt", b"", "text/plain"))])
+    assert r.status_code == 200 and r.json() == body
+    sent = calls[0]
+    assert sent["method"] == "POST" and sent["url"].endswith("/materials")
+    assert [(n, f[0], f[1]) for n, f in sent["files"]] == [("files", "ТЗ.docx", b"docx"), ("files", "пустой.txt", b"")]
+    log = json.loads((tmp_path / "web" / "uploads.jsonl").read_text(encoding="utf-8"))
+    assert log["files"][0] == {"filename": "ТЗ.docx", "id": 1, "error": None, "already_uploaded": False}
+
+
+def test_upload_limits_and_core_errors(monkeypatch, tmp_path):
+    import httpx
+
+    c = _client(monkeypatch, tmp_path)
+    many = [("files", (f"{i}.txt", b"x", "text/plain")) for i in range(21)]
+    assert c.post("/api/upload", files=many).status_code == 413
+    _core_request(monkeypatch, exc=httpx.ConnectError("refused"))
+    r = c.post("/api/upload", files=[("files", ("a.txt", b"x", "text/plain"))])
+    assert r.status_code == 503 and "copilot1c-core" in r.json()["detail"]
+    _core_request(monkeypatch, 503, {"detail": "PostgreSQL недоступен — реестр материалов не работает"})
+    r = c.get("/api/materials")
+    assert r.status_code == 503 and "PostgreSQL" in r.json()["detail"]
+
+
+def test_materials_list_proxied(monkeypatch, tmp_path):
+    c = _client(monkeypatch, tmp_path)
+    rows = {"materials": [{"id": 2, "filename": "письмо.msg", "status": "duplicate", "status_label": "уже есть"}]}
+    calls = _core_request(monkeypatch, 200, rows)
+    assert c.get("/api/materials?limit=50").json() == rows
+    assert calls[0]["method"] == "GET" and calls[0]["params"] == {"limit": 50}
+
+
+def test_materials_page_has_live_upload(monkeypatch, tmp_path):
+    c = _client(monkeypatch, tmp_path)
+    page = c.get("/materials").text
+    assert 'id="drop"' in page and 'id="files"' in page and 'id="uploads"' in page and "disabled" not in page
+    js = c.get("/static/app.js").text
+    assert "initMaterials" in js and "/api/upload" in js and "/api/materials" in js

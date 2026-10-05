@@ -280,5 +280,159 @@ function initChat() {
   });
 }
 
+
+// ---------- материалы: загрузка через веб и судьба файлов ----------
+
+const ACTIVE = new Set(["queued", "parsing", "indexing", "graph"]);
+const STATUS_CLASS = { done: "done", error: "error", duplicate: "" };
+
+function fmtSize(n) {
+  if (n < 1024) return `${n} Б`;
+  if (n < 1048576) return `${Math.round(n / 1024)} КБ`;
+  return `${(n / 1048576).toFixed(1)} МБ`;
+}
+
+function fmtTime(iso) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  return d.toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+}
+
+function plural(n, one, few, many) {
+  const m10 = n % 10, m100 = n % 100;
+  const w = m10 === 1 && m100 !== 11 ? one : m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14) ? few : many;
+  return `${n} ${w}`;
+}
+
+function reportItems(r) {
+  // отчёт обработки по-русски: что было в файле и что из этого попало в базу
+  const items = [];
+  if (r.emails) items.push(plural(r.emails, "письмо", "письма", "писем"));
+  for (const d of r.documents || []) {
+    const extra = [];
+    if (d.test_cases) extra.push(plural(d.test_cases, "тест-кейс", "тест-кейса", "тест-кейсов"));
+    if (d.plan_items) extra.push(plural(d.plan_items, "пункт плана", "пункта плана", "пунктов плана"));
+    items.push(`документ «${d.title}»` + (extra.length ? ` — ${extra.join(", ")}` : ""));
+  }
+  if (r.images) items.push(`распознано картинок: ${r.images}`);
+  if (r.chunks !== undefined) items.push(`фрагментов: ${r.chunks}, из них новых: ${r.chunks_new ?? 0}`);
+  for (const w of r.already_in_base || []) items.push(`уже в базе: ${w}`);
+  for (const s of r.skipped || []) items.push(`пропущено ${s.file}: ${s.reason}`);
+  return items;
+}
+
+function materialRow(m) {
+  const status = el("span", { class: "st " + (ACTIVE.has(m.status) ? "active" : STATUS_CLASS[m.status] ?? "") },
+    m.status_label || m.status);
+  const result = el("td", {}, el("div", { class: "mat-detail" }, m.detail || (ACTIVE.has(m.status) ? "" : "—")));
+  const items = reportItems(m.report || {});
+  if (items.length) {
+    const list = el("ul");
+    items.forEach((x) => list.append(el("li", {}, x)));
+    result.append(el("details", {}, el("summary", {}, "Подробнее"), list));
+  }
+  const when = m.finished_at ? `обработан ${fmtTime(m.finished_at)}` : m.started_at ? `начат ${fmtTime(m.started_at)}` : "";
+  return el("tr", {},
+    el("td", {}, el("span", { class: "mat-name" }, m.filename), el("span", { class: "mat-sub" }, fmtSize(m.size))),
+    el("td", {}, fmtTime(m.uploaded_at), el("span", { class: "mat-sub" }, when)),
+    el("td", {}, status),
+    result);
+}
+
+let pollTimer = null;
+let wasActive = false;
+
+async function loadMaterials() {
+  const box = $("uploads");
+  clearTimeout(pollTimer);
+  let data;
+  try {
+    const r = await fetch("/api/materials", { cache: "no-store" });
+    data = await r.json();
+    if (!r.ok) throw new Error(typeof data.detail === "string" ? data.detail : `HTTP ${r.status}`);
+  } catch (e) {
+    box.replaceChildren(el("p", { class: "hint" }, `Список недоступен: ${e.message}`));
+    pollTimer = setTimeout(loadMaterials, 10000);
+    return;
+  }
+  const rows = data.materials || [];
+  if (!rows.length) {
+    box.replaceChildren(el("p", { class: "hint" }, "Через веб пока ничего не загружали."));
+  } else {
+    const body = el("tbody");
+    rows.forEach((m) => body.append(materialRow(m)));
+    box.replaceChildren(el("table", { class: "mat-table" },
+      el("thead", {}, el("tr", {}, el("th", {}, "Файл"), el("th", {}, "Загружен"), el("th", {}, "Статус"), el("th", {}, "Итог"))),
+      body));
+  }
+  const active = rows.filter((m) => ACTIVE.has(m.status)).length;
+  setText("uploads-live", active ? `в работе: ${active} · обновляется автоматически` : "");
+  if (wasActive && !active) loadHealth();  // обработка закончилась — обновить счётчики справа
+  wasActive = active > 0;
+  pollTimer = setTimeout(loadMaterials, active ? 3000 : 30000);
+}
+
+async function uploadFiles(fileList) {
+  const files = [...fileList];
+  if (!files.length) return;
+  const drop = $("drop");
+  const status = $("upload-status");
+  if (files.length > 20) {
+    status.className = "upload-status bad";
+    status.textContent = "Не больше 20 файлов за раз.";
+    return;
+  }
+  const body = new FormData();
+  files.forEach((f) => body.append("files", f, f.name));
+  drop.classList.add("busy");
+  $("pick").disabled = true;
+  status.className = "upload-status";
+  status.textContent = `Отправляю ${plural(files.length, "файл", "файла", "файлов")}…`;
+  try {
+    const r = await fetch("/api/upload", { method: "POST", body });
+    const data = await r.json();
+    if (!r.ok) throw new Error(typeof data.detail === "string" ? data.detail : `HTTP ${r.status}`);
+    const res = data.materials || [];
+    const accepted = res.filter((m) => !m.error && !m.already_uploaded).length;
+    const again = res.filter((m) => m.already_uploaded).length;
+    const rejected = res.filter((m) => m.error);
+    const parts = [`принято в обработку: ${accepted}`];
+    if (again) parts.push(`уже загружались раньше: ${again}`);
+    if (rejected.length) parts.push(`не принято: ${rejected.map((m) => `${m.filename} (${m.error})`).join(", ")}`);
+    status.className = "upload-status" + (rejected.length && !accepted ? " bad" : "");
+    status.textContent = parts.join(" · ");
+  } catch (e) {
+    status.className = "upload-status bad";
+    status.textContent = `Не удалось загрузить: ${e.message}`;
+  } finally {
+    drop.classList.remove("busy");
+    $("pick").disabled = false;
+    $("files").value = "";
+    loadMaterials();
+  }
+}
+
+function initMaterials() {
+  const drop = $("drop");
+  if (!drop) return;
+  const input = $("files");
+  $("pick").addEventListener("click", (e) => { e.stopPropagation(); input.click(); });
+  drop.addEventListener("click", () => input.click());
+  drop.tabIndex = 0;
+  drop.setAttribute("role", "button");
+  drop.setAttribute("aria-label", "Загрузить файлы");
+  drop.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); input.click(); } });
+  input.addEventListener("change", () => uploadFiles(input.files));
+  drop.addEventListener("dragover", (e) => { e.preventDefault(); drop.classList.add("over"); });
+  drop.addEventListener("dragleave", () => drop.classList.remove("over"));
+  drop.addEventListener("drop", (e) => {
+    e.preventDefault();
+    drop.classList.remove("over");
+    uploadFiles(e.dataTransfer.files);
+  });
+  loadMaterials();
+}
+
 loadHealth();
 initChat();
+initMaterials();
