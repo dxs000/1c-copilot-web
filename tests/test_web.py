@@ -188,3 +188,11 @@ def test_materials_page_has_live_upload(monkeypatch, tmp_path):
     assert 'id="drop"' in page and 'id="files"' in page and 'id="uploads"' in page and "disabled" not in page
     js = c.get("/static/app.js").text
     assert "initMaterials" in js and "/api/upload" in js and "/api/materials" in js
+
+
+def test_file_picker_is_native_label_and_pages_not_cached(monkeypatch, tmp_path):
+    c = _client(monkeypatch, tmp_path)
+    page = c.get("/materials")
+    assert '<label class="btn primary" for="files" id="pick"' in page.text  # диалог открывается и без скрипта
+    assert page.headers["cache-control"] == "no-cache"
+    assert c.get("/static/app.js").headers["cache-control"] == "no-cache"

@@ -40,6 +40,15 @@ app = FastAPI(title="1С Project Copilot", version=__version__, docs_url="/api/d
 app.mount("/static", StaticFiles(directory=STATIC), name="static")
 
 
+@app.middleware("http")
+async def no_stale_pages(request, call_next):
+    """Страницы и статика — с проверкой свежести: после обновления веба браузер не держит старый app.js."""
+    response = await call_next(request)
+    if not request.url.path.startswith("/api/"):
+        response.headers["Cache-Control"] = "no-cache"
+    return response
+
+
 def _core_health() -> dict | None:
     """Состояние ядра от демона; None — демон недоступен."""
     try:

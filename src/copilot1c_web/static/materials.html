@@ -28,9 +28,10 @@
       <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#0B6B63" stroke-width="1.6" aria-hidden="true"><path d="M12 16V4M7 9l5-5 5 5M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/></svg>
       <strong>Перетащите файлы сюда или выберите на компьютере</strong>
       <small>Письма .msg и .eml со вложениями, документы .docx, .pdf, .xlsx, старые .doc и .xls, архивы .zip. Скриншоты и сканы распознаются автоматически. До 20 файлов за раз.</small>
-      <input type="file" id="files" multiple hidden
+      <input type="file" id="files" class="visually-hidden" multiple tabindex="-1"
              accept=".msg,.eml,.docx,.docm,.doc,.rtf,.odt,.pdf,.xlsx,.xlsm,.xls,.ods,.pptx,.ppt,.zip,.txt,.png,.jpg,.jpeg">
-      <button class="btn primary" type="button" id="pick">Выбрать файлы</button>
+      <!-- label, а не кнопка со скриптом: диалог выбора открывает сам браузер, в любом браузере -->
+      <label class="btn primary" for="files" id="pick" tabindex="0" role="button">Выбрать файлы</label>
     </div>
     <p class="upload-status" id="upload-status" aria-live="polite"></p>
 

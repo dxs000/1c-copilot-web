@@ -385,7 +385,7 @@ async function uploadFiles(fileList) {
   const body = new FormData();
   files.forEach((f) => body.append("files", f, f.name));
   drop.classList.add("busy");
-  $("pick").disabled = true;
+  $("pick").setAttribute("aria-disabled", "true");
   status.className = "upload-status";
   status.textContent = `Отправляю ${plural(files.length, "файл", "файла", "файлов")}…`;
   try {
@@ -406,7 +406,7 @@ async function uploadFiles(fileList) {
     status.textContent = `Не удалось загрузить: ${e.message}`;
   } finally {
     drop.classList.remove("busy");
-    $("pick").disabled = false;
+    $("pick").removeAttribute("aria-disabled");
     $("files").value = "";
     loadMaterials();
   }
@@ -416,12 +416,10 @@ function initMaterials() {
   const drop = $("drop");
   if (!drop) return;
   const input = $("files");
-  $("pick").addEventListener("click", (e) => { e.stopPropagation(); input.click(); });
-  drop.addEventListener("click", () => input.click());
-  drop.tabIndex = 0;
-  drop.setAttribute("role", "button");
-  drop.setAttribute("aria-label", "Загрузить файлы");
-  drop.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); input.click(); } });
+  const pick = $("pick");  // <label for="files">: диалог открывает браузер сам
+  // клик по зоне вне кнопки тоже открывает выбор; клики по самой кнопке и полю не дублируем
+  drop.addEventListener("click", (e) => { if (!e.target.closest("label, input")) input.click(); });
+  pick.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); input.click(); } });
   input.addEventListener("change", () => uploadFiles(input.files));
   drop.addEventListener("dragover", (e) => { e.preventDefault(); drop.classList.add("over"); });
   drop.addEventListener("dragleave", () => drop.classList.remove("over"));
