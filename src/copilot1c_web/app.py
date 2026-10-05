@@ -1,27 +1,33 @@
-"""Веб-приложение 1С Project Copilot (шаг 1 — заглушка).
+"""Веб-приложение 1С Project Copilot.
 
-Отдаёт два экрана интерфейса («Чат», «Материалы») и состояние системы. Вопросы и загрузка пока
-отвечают заглушкой — они подключаются следующими шагами к функциям ядра (пакет copilot1c).
+Экраны «Чат» и «Материалы», состояние системы и вопросы к агенту ядра (пакет copilot1c) с
+источниками. Загрузка материалов через веб — заглушка до шага 3.
 
 Запуск: copilot1c-web  (порт 80; для разработки: copilot1c-web --port 8080 --reload)
 """
 
 from __future__ import annotations
 
+import json
+import threading
 import time
 from datetime import datetime
 from importlib import metadata, resources
 from pathlib import Path
 
 from copilot1c.config import Settings, get_settings
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from copilot1c_web import __version__
 
 STATIC = Path(str(resources.files("copilot1c_web").joinpath("static")))
+
+
+STARTED = time.time()
+_LOG_LOCK = threading.Lock()
 
 
 def _core_version() -> str:
@@ -29,7 +35,6 @@ def _core_version() -> str:
         return metadata.version("1c-copilot")
     except metadata.PackageNotFoundError:
         return "?"
-STARTED = time.time()
 
 app = FastAPI(title="1С Project Copilot", version=__version__, docs_url="/api/docs", redoc_url=None)
 app.mount("/static", StaticFiles(directory=STATIC), name="static")
@@ -81,17 +86,78 @@ def health() -> JSONResponse:
 
 
 class AskRequest(BaseModel):
-    question: str
+    question: str = Field(min_length=2, max_length=2000)
+
+
+class FeedbackRequest(BaseModel):
+    question: str = Field(max_length=2000)
+    answer: str = Field(max_length=20000)
+    verdict: str = Field(pattern="^(ok|wrong)$")
+    comment: str = Field(default="", max_length=2000)
+
+
+def _log(name: str, record: dict) -> None:
+    """Журнал вопросов и отметок — в .cache/web/*.jsonl: аудит и пополнение эталонного набора для eval."""
+    s = get_settings()
+    path = Path(s.cache_dir or ".cache") / "web" / f"{name}.jsonl"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    line = json.dumps({"at": datetime.now().astimezone().isoformat(timespec="seconds"), **record}, ensure_ascii=False)
+    with _LOG_LOCK, path.open("a", encoding="utf-8") as f:
+        f.write(line + "\n")
+
+
+def _search_sources(s: Settings, question: str, k: int = 8) -> list[dict]:
+    """Те же фрагменты, что агент получает перед ответом (тот же запрос и тот же поиск ядра)."""
+    from copilot1c.index.yandex import VectorIndex
+    from copilot1c.retrieval import smart_search, source_label
+
+    index = VectorIndex(s.vector_store_id, s)
+    hits = smart_search(lambda q, f, kk: index.search(q, filters=f, k=kk), question, {"project": s.project}, k)
+    out = []
+    for i, h in enumerate(hits, 1):
+        attrs = h.get("attributes") or {}
+        out.append({"n": i, "label": source_label(attrs, h.get("text", "")), "doc_type": attrs.get("doc_type", ""),
+                    "date": attrs.get("date", ""), "text": h.get("text", "")})
+    return out
+
+
+def _run_agent(s: Settings, question: str):
+    from copilot1c.agent.tools import ToolContext, run_agent
+    from copilot1c.graph.store import try_connect
+
+    store = try_connect(s)
+    try:
+        return run_agent(question, ToolContext(s, s.vector_store_id, Path("data/dumps"), store))
+    finally:
+        if store is not None:
+            store.close()
 
 
 @app.post("/api/ask")
 def ask(req: AskRequest) -> dict:
-    """Шаг 1: заглушка. Шаг 2 подключит агента (run_agent) и вернёт ответ с источниками."""
-    return {
-        "stub": True,
-        "answer": f"Заглушка: вопрос «{req.question.strip()[:300]}» принят. Ответы агента подключаются на шаге 2.",
-        "sources": [],
-    }
+    """Вопрос агенту: ответ, источники (найденные фрагменты) и шаги агента."""
+    s = get_settings()
+    if not (s.yc_api_key and s.yc_folder_id and s.vector_store_id):
+        raise HTTPException(503, "Не настроены ключи Yandex или COPILOT_VECTOR_STORE_ID в .env")
+    question = req.question.strip()
+    t0 = time.monotonic()
+    try:
+        sources = _search_sources(s, question)
+        result = _run_agent(s, question)
+    except Exception as exc:  # noqa: BLE001 — показываем пользователю причину, а не 500 без текста
+        _log("asks", {"question": question, "error": f"{type(exc).__name__}: {exc}"[:500]})
+        raise HTTPException(502, f"Ошибка обращения к Yandex AI Studio: {type(exc).__name__}: {str(exc)[:300]}") from exc
+    seconds = round(time.monotonic() - t0, 1)
+    tools = [t.get("tool", "") for t in getattr(result, "trace", [])]
+    _log("asks", {"question": question, "answer": result.answer, "seconds": seconds, "steps": result.steps,
+                  "tools": tools, "sources": [x["label"] for x in sources]})
+    return {"answer": result.answer, "sources": sources, "seconds": seconds, "steps": result.steps, "tools": tools}
+
+
+@app.post("/api/feedback")
+def feedback(req: FeedbackRequest) -> dict:
+    _log("feedback", req.model_dump())
+    return {"ok": True}
 
 
 @app.post("/api/upload")
