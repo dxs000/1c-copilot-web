@@ -1,5 +1,4 @@
 import json
-from types import SimpleNamespace
 
 from copilot1c.config import Settings
 from copilot1c.graph import store
@@ -38,59 +37,55 @@ def test_health_counts_manifest(monkeypatch, tmp_path):
     assert h["yandex"]["configured"] is True and h["index"] == {"configured": True, "chunks": 2}
 
 
-KEYS = {"yc_api_key": "k", "yc_folder_id": "f", "vector_store_id": "vs1"}
 
 
-def test_ask_without_keys_is_503(monkeypatch, tmp_path):
-    c = _client(monkeypatch, tmp_path, yc_api_key="", yc_folder_id="")
-    r = c.post("/api/ask", json={"question": "Почему не 11.6?"})
-    assert r.status_code == 503 and "COPILOT_VECTOR_STORE_ID" in r.json()["detail"]
+def _core(monkeypatch, status=200, body=None, exc=None):
+    import httpx
+
+    sent = []
+
+    def fake(question):
+        sent.append(question)
+        if exc:
+            raise exc
+        return httpx.Response(status, json=body if body is not None else {})
+
+    monkeypatch.setattr(web, "_core_ask", fake)
+    return sent
+
+
+def test_ask_proxies_to_core_and_logs(monkeypatch, tmp_path):
+    c = _client(monkeypatch, tmp_path)
+    src = [{"n": 1, "label": "Письмо · 2025-03-01", "doc_type": "email", "date": "2025-03-01", "text": "11.5.27.75"}]
+    body = {"answer": "Потому что [1].", "sources": src, "seconds": 12.3, "steps": 2, "tools": ["search_docs"]}
+    sent = _core(monkeypatch, 200, body)
+    r = c.post("/api/ask", json={"question": "  Почему не 11.6?  "})
+    assert r.status_code == 200 and r.json() == body and sent == ["Почему не 11.6?"]
+    log = [json.loads(x) for x in (tmp_path / "web" / "asks.jsonl").read_text(encoding="utf-8").splitlines()]
+    assert log[0]["question"] == "Почему не 11.6?" and log[0]["sources"] == ["Письмо · 2025-03-01"]
     assert c.post("/api/ask", json={"question": "?"}).status_code == 422
     assert c.post("/api/upload").status_code == 501
 
 
-def test_ask_returns_answer_sources_and_logs(monkeypatch, tmp_path):
-    c = _client(monkeypatch, tmp_path, **KEYS)
-    src = [{"n": 1, "label": "Письмо · 2025-03-01", "doc_type": "email", "date": "2025-03-01", "text": "11.5.27.75"}]
-    monkeypatch.setattr(web, "_search_sources", lambda s, q, k=8: src)
-    monkeypatch.setattr(web, "_run_agent", lambda s, q: SimpleNamespace(
-        answer="Потому что [1].", steps=2, trace=[{"tool": "search_docs", "args": "{}"}]))
-    r = c.post("/api/ask", json={"question": "  Почему не 11.6?  "})
-    body = r.json()
-    assert r.status_code == 200 and body["answer"] == "Потому что [1]." and body["sources"] == src
-    assert body["steps"] == 2 and body["tools"] == ["search_docs"]
-    log = [json.loads(x) for x in (tmp_path / "web" / "asks.jsonl").read_text(encoding="utf-8").splitlines()]
-    assert log[0]["question"] == "Почему не 11.6?" and log[0]["sources"] == ["Письмо · 2025-03-01"]
-
-
-def test_ask_reports_core_errors_as_502(monkeypatch, tmp_path):
-    c = _client(monkeypatch, tmp_path, **KEYS)
-    monkeypatch.setattr(web, "_search_sources", lambda s, q, k=8: [])
-
-    def boom(s, q):
-        raise RuntimeError("429 Too Many Requests")
-
-    monkeypatch.setattr(web, "_run_agent", boom)
+def test_ask_passes_core_errors_through(monkeypatch, tmp_path):
+    c = _client(monkeypatch, tmp_path)
+    _core(monkeypatch, 502, {"detail": "Ошибка обращения к Yandex AI Studio: 429 Too Many Requests"})
     r = c.post("/api/ask", json={"question": "Почему не 11.6?"})
     assert r.status_code == 502 and "429" in r.json()["detail"]
+    _core(monkeypatch, 503, {"detail": "Не настроены ключи Yandex или COPILOT_VECTOR_STORE_ID в .env ядра"})
+    assert c.post("/api/ask", json={"question": "Почему не 11.6?"}).status_code == 503
     assert "error" in (tmp_path / "web" / "asks.jsonl").read_text(encoding="utf-8")
 
 
-def test_search_sources_maps_hits(monkeypatch, tmp_path):
-    from copilot1c.index import yandex
+def test_ask_when_core_is_down_or_slow(monkeypatch, tmp_path):
+    import httpx
 
-    seen = {}
-
-    def fake_search(self, q, filters=None, k=10):
-        seen["filters"] = filters
-        return [{"score": 0.9, "file_id": "f1", "text": "Тело",
-                 "attributes": {"doc_type": "tz", "date": "2025-01-10", "title": "ТЗ, раздел 3"}}]
-
-    monkeypatch.setattr(yandex.VectorIndex, "search", fake_search)
-    s = Settings(cache_dir=str(tmp_path), **KEYS)
-    out = web._search_sources(s, "Что в ТЗ про цены?")
-    assert seen["filters"]["project"] == "ut11-update"
-    assert out[0]["n"] == 1 and out[0]["doc_type"] == "tz" and out[0]["text"] == "Тело" and out[0]["label"]
+    c = _client(monkeypatch, tmp_path)
+    _core(monkeypatch, exc=httpx.ConnectError("Connection refused"))
+    r = c.post("/api/ask", json={"question": "Почему не 11.6?"})
+    assert r.status_code == 503 and "copilot1c-core" in r.json()["detail"]
+    _core(monkeypatch, exc=httpx.ReadTimeout("timed out"))
+    assert c.post("/api/ask", json={"question": "Почему не 11.6?"}).status_code == 504
 
 
 def test_feedback_is_logged(monkeypatch, tmp_path):

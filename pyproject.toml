@@ -9,6 +9,7 @@ dependencies = [
     "1c-copilot @ git+https://github.com/dxs000/1c-copilot@main",
     "fastapi>=0.115",
     "uvicorn[standard]>=0.30",
+    "httpx>=0.27",  # вопросы к демону ядра
 ]
 
 [project.optional-dependencies]

@@ -1,7 +1,8 @@
 """Веб-приложение 1С Project Copilot.
 
-Экраны «Чат» и «Материалы», состояние системы и вопросы к агенту ядра (пакет copilot1c) с
-источниками. Загрузка материалов через веб — заглушка до шага 3.
+Экраны «Чат» и «Материалы», состояние системы и вопросы к агенту с источниками. Вопросы уходят в
+демон ядра (служба copilot1c-core, HTTP на 127.0.0.1:8100; адрес — COPILOT_CORE_URL): у ядра свои
+настройки, индекс и кэш. Загрузка материалов через веб — заглушка до шага 3.
 
 Запуск: copilot1c-web  (порт 80; для разработки: copilot1c-web --port 8080 --reload)
 """
@@ -9,12 +10,14 @@
 from __future__ import annotations
 
 import json
+import os
 import threading
 import time
 from datetime import datetime
 from importlib import metadata, resources
 from pathlib import Path
 
+import httpx
 from copilot1c.config import Settings, get_settings
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, JSONResponse
@@ -26,6 +29,8 @@ from copilot1c_web import __version__
 STATIC = Path(str(resources.files("copilot1c_web").joinpath("static")))
 
 
+CORE_URL = os.environ.get("COPILOT_CORE_URL", "http://127.0.0.1:8100").rstrip("/")
+CORE_TIMEOUT = 300  # агент отвечает 10–40 с, но при ограничениях AI Studio SDK ждёт и повторяет
 STARTED = time.time()
 _LOG_LOCK = threading.Lock()
 
@@ -106,52 +111,36 @@ def _log(name: str, record: dict) -> None:
         f.write(line + "\n")
 
 
-def _search_sources(s: Settings, question: str, k: int = 8) -> list[dict]:
-    """Те же фрагменты, что агент получает перед ответом (тот же запрос и тот же поиск ядра)."""
-    from copilot1c.index.yandex import VectorIndex
-    from copilot1c.retrieval import smart_search, source_label
-
-    index = VectorIndex(s.vector_store_id, s)
-    hits = smart_search(lambda q, f, kk: index.search(q, filters=f, k=kk), question, {"project": s.project}, k)
-    out = []
-    for i, h in enumerate(hits, 1):
-        attrs = h.get("attributes") or {}
-        out.append({"n": i, "label": source_label(attrs, h.get("text", "")), "doc_type": attrs.get("doc_type", ""),
-                    "date": attrs.get("date", ""), "text": h.get("text", "")})
-    return out
-
-
-def _run_agent(s: Settings, question: str):
-    from copilot1c.agent.tools import ToolContext, run_agent
-    from copilot1c.graph.store import try_connect
-
-    store = try_connect(s)
-    try:
-        return run_agent(question, ToolContext(s, s.vector_store_id, Path("data/dumps"), store))
-    finally:
-        if store is not None:
-            store.close()
+def _core_ask(question: str) -> httpx.Response:
+    """Вопрос демону ядра; ответ в формате {answer, sources, seconds, steps, tools}."""
+    return httpx.post(f"{CORE_URL}/ask", json={"question": question}, timeout=CORE_TIMEOUT)
 
 
 @app.post("/api/ask")
 def ask(req: AskRequest) -> dict:
-    """Вопрос агенту: ответ, источники (найденные фрагменты) и шаги агента."""
-    s = get_settings()
-    if not (s.yc_api_key and s.yc_folder_id and s.vector_store_id):
-        raise HTTPException(503, "Не настроены ключи Yandex или COPILOT_VECTOR_STORE_ID в .env")
+    """Вопрос агенту через демон ядра: ответ, источники (найденные фрагменты) и шаги агента."""
     question = req.question.strip()
-    t0 = time.monotonic()
     try:
-        sources = _search_sources(s, question)
-        result = _run_agent(s, question)
-    except Exception as exc:  # noqa: BLE001 — показываем пользователю причину, а не 500 без текста
-        _log("asks", {"question": question, "error": f"{type(exc).__name__}: {exc}"[:500]})
-        raise HTTPException(502, f"Ошибка обращения к Yandex AI Studio: {type(exc).__name__}: {str(exc)[:300]}") from exc
-    seconds = round(time.monotonic() - t0, 1)
-    tools = [t.get("tool", "") for t in getattr(result, "trace", [])]
-    _log("asks", {"question": question, "answer": result.answer, "seconds": seconds, "steps": result.steps,
-                  "tools": tools, "sources": [x["label"] for x in sources]})
-    return {"answer": result.answer, "sources": sources, "seconds": seconds, "steps": result.steps, "tools": tools}
+        r = _core_ask(question)
+    except httpx.TimeoutException as exc:
+        _log("asks", {"question": question, "error": "таймаут ядра"})
+        raise HTTPException(504, f"Ядро не ответило за {CORE_TIMEOUT} с") from exc
+    except httpx.HTTPError as exc:
+        _log("asks", {"question": question, "error": f"ядро недоступно: {type(exc).__name__}"})
+        raise HTTPException(503, f"Ядро недоступно ({CORE_URL}). Проверьте службу: systemctl status copilot1c-core") \
+            from exc
+    try:
+        data = r.json()
+    except ValueError:
+        data = {}
+    if r.status_code != 200:
+        detail = data.get("detail") if isinstance(data.get("detail"), str) else f"Ошибка ядра: HTTP {r.status_code}"
+        _log("asks", {"question": question, "error": detail[:500]})
+        raise HTTPException(r.status_code, detail)
+    _log("asks", {"question": question, "answer": data.get("answer", ""), "seconds": data.get("seconds"),
+                  "steps": data.get("steps"), "tools": data.get("tools", []),
+                  "sources": [x.get("label", "") for x in data.get("sources", [])]})
+    return data
 
 
 @app.post("/api/feedback")
