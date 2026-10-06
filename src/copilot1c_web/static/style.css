@@ -308,3 +308,14 @@ body.drawer-open { overflow: hidden; }
 .issue-similar { font-size: 13px; padding: 8px 10px; border-radius: 8px; background: var(--surface); border: 1px solid var(--warn-line); }
 .issue-similar[hidden] { display: none; }
 .issue-similar ul { margin: 4px 0 0; padding-left: 18px; }
+
+/* Обращения: разбор в базу знаний (блок «Итог») */
+.kb { grid-column: 1 / -1; border-top: 1px dashed var(--line); padding-top: 10px; display: flex; flex-direction: column; gap: 10px; }
+.kb-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.kb-state { flex: 1 1 300px; font-size: 13px; color: var(--muted); }
+.kb-editor { display: flex; flex-direction: column; gap: 10px; }
+.kb-editor[hidden] { display: none; }
+.kb-editor textarea { min-height: 260px; font-size: 13px; line-height: 1.45; }
+.kb-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.kb-note { font-size: 13px; color: var(--muted); }
+.btn[hidden] { display: none; }

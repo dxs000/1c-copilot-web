@@ -236,6 +236,18 @@ def issues_comment(issue_id: int, body: Annotated[dict, Body()]) -> dict:
     return _core_call("POST", f"/issues/{issue_id}/comments", json=body)
 
 
+@app.post("/api/issues/{issue_id}/kb-draft")
+def issues_kb_draft(issue_id: int) -> dict:
+    """Разбор решённого обращения для базы знаний (готовит ядро, ничего не сохраняет)."""
+    return _core_call("POST", f"/issues/{issue_id}/kb-draft", json={})
+
+
+@app.post("/api/issues/{issue_id}/kb-publish")
+def issues_kb_publish(issue_id: int, body: Annotated[dict, Body()]) -> dict:
+    """Разбор → материал «Решение ОБР-… — тема.md» и ссылка на него в обращении."""
+    return _core_call("POST", f"/issues/{issue_id}/kb-publish", json=body)
+
+
 @app.get("/api/issues/{issue_id}/related")
 def issues_related(issue_id: int) -> dict:
     """Похожие обращения и связанные тест-кейсы ПиМИ и пункты ТЗ (считает ядро)."""

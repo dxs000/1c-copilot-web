@@ -124,6 +124,23 @@
     <fieldset class="fs-2"><legend>Итог</legend>
       <label class="fld wide"><span>Причина</span><textarea name="root_cause" rows="2"></textarea></label>
       <label class="fld wide"><span>Решение</span><textarea name="resolution" rows="3"></textarea></label>
+      <div class="kb" id="ip-kb">
+        <div class="kb-head">
+          <span class="kb-state" id="ip-kb-state"></span>
+          <button class="btn small" type="button" id="ip-kb-draft">Разбор в базу знаний…</button>
+        </div>
+        <div class="kb-editor" id="ip-kb-editor" hidden>
+          <label class="fld"><span>Тема разбора</span><input id="kb-title" type="text" maxlength="200"></label>
+          <label class="fld"><span>Текст разбора — проверьте и при необходимости поправьте</span>
+            <textarea id="kb-text" rows="14" class="mono"></textarea></label>
+          <div class="kb-actions">
+            <button class="btn small primary" type="button" id="kb-publish">Отправить в базу знаний</button>
+            <button class="btn small" type="button" id="kb-regen">Подготовить заново</button>
+            <button class="btn small" type="button" id="kb-cancel">Отмена</button>
+            <span class="kb-note" id="kb-note" aria-live="polite"></span>
+          </div>
+        </div>
+      </div>
     </fieldset>
 
     <fieldset><legend>Вложения</legend>

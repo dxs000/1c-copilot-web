@@ -298,3 +298,16 @@ def test_related_forwarded(monkeypatch, tmp_path):
     c.post("/api/issues/related", json={"title": "Не проводится реализация"})
     assert calls[-1]["url"].endswith("/issues/related") and calls[-1]["json"] == {"title": "Не проводится реализация"}
     assert 'id="ip-related"' in c.get("/issues").text and "renderRelated" in c.get("/static/issues.js").text
+
+
+def test_kb_forwarded(monkeypatch, tmp_path):
+    c = _client(monkeypatch, tmp_path)
+    calls = _core_request(monkeypatch, 200, {"title": "t", "text": "x", "method": "template", "warnings": []})
+    assert c.post("/api/issues/7/kb-draft").json()["method"] == "template"
+    assert calls[-1]["method"] == "POST" and calls[-1]["url"].endswith("/issues/7/kb-draft")
+    c.post("/api/issues/7/kb-publish", json={"title": "t", "text": "x" * 50, "actor": "Иванов И."})
+    assert calls[-1]["url"].endswith("/issues/7/kb-publish") and calls[-1]["json"]["actor"] == "Иванов И."
+    _core_request(monkeypatch, 422, {"detail": "Заполните поле «Решение»"})
+    r = c.post("/api/issues/7/kb-draft")
+    assert r.status_code == 422 and "Решение" in r.json()["detail"]
+    assert 'id="ip-kb"' in c.get("/issues").text and "kbPublish" in c.get("/static/issues.js").text

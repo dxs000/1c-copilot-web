@@ -358,6 +358,7 @@ function render(issue) {
   ISS.base = readForm();
   renderAttachments(issue);
   renderHistory(issue);
+  renderKb(issue);
   if (issue) loadRelated();
   else $("ip-related").replaceChildren(el("p", { class: "hint" },
     "Заполните тему или описание и нажмите «Найти по текущим полям» — система подскажет похожие обращения, тест-кейсы ПиМИ и пункты ТЗ."));
@@ -451,9 +452,14 @@ async function save(e) {
       const comment = $("ip-comment").value.trim();
       if (!Object.keys(diff).length && !comment) { setText("ip-saved", "изменений нет"); return; }
       try {
-        render(await api(`/api/issues/${ISS.issue.id}`, json("PATCH",
-          { version: ISS.issue.version, changes: diff, comment: comment || null, actor: me() })));
+        const saved = await api(`/api/issues/${ISS.issue.id}`, json("PATCH",
+          { version: ISS.issue.version, changes: diff, comment: comment || null, actor: me() }));
+        render(saved);
         setText("ip-saved", "сохранено");
+        if (["resolved", "closed"].includes(saved.status) && (saved.resolution || "").trim() && !saved.kb_material_id) {
+          notice("Обращение решено — сохраните опыт в базу знаний, чтобы он находился в чате.", "info",
+            { label: "Подготовить разбор", onclick: () => { $("ip-kb").scrollIntoView({ block: "center" }); kbDraft(); } });
+        }
       } catch (err) {
         if (err.status !== 409 || !err.detail?.current) throw err;
         // Обращение успели изменить: показываем свежую версию и возвращаем в форму правки аналитика —
@@ -723,6 +729,84 @@ function renderRelated(data) {
     "Похожих обращений, тест-кейсов и пунктов ТЗ не найдено.")]));
 }
 
+// ---------- база знаний: разбор решённого обращения ----------
+
+function renderKb(issue) {
+  $("ip-kb-editor").hidden = true;
+  const state = $("ip-kb-state");
+  const btn = $("ip-kb-draft");
+  if (!issue) {
+    state.textContent = "Разбор для базы знаний можно подготовить после сохранения обращения.";
+    btn.hidden = true;
+    return;
+  }
+  btn.hidden = false;
+  const hasSolution = !!(issue.resolution || "").trim();
+  btn.disabled = !hasSolution;
+  btn.textContent = issue.kb_material_id ? "Обновить разбор…" : "Разбор в базу знаний…";
+  if (issue.kb_material_id) {
+    state.replaceChildren("Разбор в базе знаний: ", el("a", { href: "/materials", target: "_blank", rel: "noopener" },
+      `материал № ${issue.kb_material_id}`), " (статус обработки — на вкладке «Материалы»).");
+  } else {
+    state.textContent = hasSolution ? "Опыт решения можно сохранить в базу знаний — тогда он найдётся в чате."
+      : "Заполните «Решение» и сохраните — тогда можно будет подготовить разбор для базы знаний.";
+  }
+}
+
+async function kbDraft() {
+  if (!ISS.issue) return;
+  if (Object.keys(changes()).length) {
+    notice("Сначала сохраните изменения обращения — разбор готовится по сохранённым полям.", "warn");
+    return;
+  }
+  const ed = $("ip-kb-editor");
+  ed.hidden = false;
+  notice("");  // подсказка «Подготовить разбор» больше не нужна
+  setText("kb-note", "готовлю разбор…");
+  $("kb-publish").disabled = true;
+  try {
+    const d = await api(`/api/issues/${ISS.issue.id}/kb-draft`, json("POST", {}));
+    $("kb-title").value = d.title;
+    $("kb-text").value = d.text;
+    const how = d.method === "llm" ? "подготовлено моделью" : "собрано из полей обращения";
+    setText("kb-note", [how, ...(d.warnings || [])].join("; "));
+    $("kb-publish").disabled = false;
+    const area = $("kb-text");
+    area.setSelectionRange(0, 0);  // открыть текст с начала, а не с конца
+    area.scrollTop = 0;
+    area.focus();
+  } catch (e) {
+    setText("kb-note", "");
+    ed.hidden = true;
+    notice(`Разбор не подготовлен: ${e.message}`, "bad");
+  }
+}
+
+async function kbPublish() {
+  if (!ISS.issue) return;
+  if (Object.keys(changes()).length) {
+    notice("Сначала сохраните изменения обращения.", "warn");
+    return;
+  }
+  const btn = $("kb-publish");
+  btn.disabled = true;
+  setText("kb-note", "отправляю…");
+  try {
+    const out = await api(`/api/issues/${ISS.issue.id}/kb-publish`, json("POST",
+      { title: $("kb-title").value.trim() || ISS.issue.title, text: $("kb-text").value, actor: me() }));
+    render(out.issue);  // новая версия обращения: ссылка на материал и запись в истории
+    const m = out.material;
+    notice(m.already_uploaded ? `Такой разбор уже в базе знаний: «${m.filename}».`
+      : `Разбор отправлен в базу знаний: «${m.filename}». Обработка — на вкладке «Материалы», обычно за минуту-две.`,
+    "info");
+  } catch (e) {
+    setText("kb-note", "");
+    notice(`Не отправлено: ${e.message}`, "bad");
+  } finally {
+    btn.disabled = false;
+  }
+}
+
 // ---------- запуск ----------
 
 async function initIssues() {
@@ -743,6 +827,10 @@ async function initIssues() {
 
   $("new-issue").addEventListener("click", newIssue);
   $("ip-related-find").addEventListener("click", loadRelated);
+  $("ip-kb-draft").addEventListener("click", kbDraft);
+  $("kb-regen").addEventListener("click", kbDraft);
+  $("kb-publish").addEventListener("click", kbPublish);
+  $("kb-cancel").addEventListener("click", () => { $("ip-kb-editor").hidden = true; setText("kb-note", ""); });
   // «Из письма…»: в шапке — новое обращение по письму, в карточке — дозаполнить открытое
   let emailTarget = "new";
   $("new-from-email").addEventListener("click", () => { emailTarget = "new"; $("email-file").click(); });
