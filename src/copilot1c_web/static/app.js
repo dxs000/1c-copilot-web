@@ -324,8 +324,22 @@ function issueCard(question, data) {
     done(el("span"));
   } }, "Это не обращение");
   const actions = el("div", { class: "issue-card-actions" }, register, edit, notIssue, note);
-  card.append(head, fields, actions);
+  const similar = el("div", { class: "issue-similar", hidden: "" });
+  card.append(head, fields, similar, actions);
   if (why) card.append(why);
+  // уже зарегистрировано? — похожие обращения по черновику (дубль лучше увидеть до «Зарегистрировать»)
+  fetch("/api/issues/related", { method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ title: d.title, description: d.description, error_text: d.error_text, objects: d.objects || [] }) })
+    .then((r) => (r.ok ? r.json() : null))
+    .then((rel) => {
+      const items = (rel?.issues || []).slice(0, 3);
+      if (!items.length) return;
+      similar.replaceChildren(el("strong", {}, "Возможно, уже зарегистрировано:"), el("ul", {}, ...items.map((x) =>
+        el("li", {}, el("a", { href: `/issues#${x.id}`, target: "_blank", rel: "noopener" }, `${x.number} · ${x.title}`),
+          ` — ${x.status_label}; ${x.why.join(", ")}`))));
+      similar.hidden = false;
+    })
+    .catch(() => {});
   return card;
 }
 

@@ -288,3 +288,13 @@ def test_intent_feedback_logged_and_chat_has_issue_card(monkeypatch, tmp_path):
     js = c.get("/static/app.js").text
     assert "issueCard" in js and "/api/intent-feedback" in js and "copilot.issueDraft" in js
     assert "openDraftFromChat" in c.get("/static/issues.js").text
+
+
+def test_related_forwarded(monkeypatch, tmp_path):
+    c = _client(monkeypatch, tmp_path)
+    calls = _core_request(monkeypatch, 200, {"issues": [], "test_cases": [], "requirements": []})
+    assert c.get("/api/issues/5/related").json()["issues"] == []
+    assert calls[-1]["method"] == "GET" and calls[-1]["url"].endswith("/issues/5/related")
+    c.post("/api/issues/related", json={"title": "Не проводится реализация"})
+    assert calls[-1]["url"].endswith("/issues/related") and calls[-1]["json"] == {"title": "Не проводится реализация"}
+    assert 'id="ip-related"' in c.get("/issues").text and "renderRelated" in c.get("/static/issues.js").text

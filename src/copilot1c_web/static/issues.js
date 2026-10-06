@@ -358,6 +358,9 @@ function render(issue) {
   ISS.base = readForm();
   renderAttachments(issue);
   renderHistory(issue);
+  if (issue) loadRelated();
+  else $("ip-related").replaceChildren(el("p", { class: "hint" },
+    "Заполните тему или описание и нажмите «Найти по текущим полям» — система подскажет похожие обращения, тест-кейсы ПиМИ и пункты ТЗ."));
 }
 
 async function openIssue(id) {
@@ -546,6 +549,7 @@ function renderChain(p) {
           await chooseInitiator(c);
           p.chain.forEach((x) => { x.chosen = x.index === c.index; });
           renderChain(p);
+  loadRelated();  // по заполненным из письма полям — сразу видно, не дубль ли
           notice(`Инициатор выбран вручную: ${c.name || c.email}${c.email && c.name ? ` (${c.email})` : ""}; ` +
             "«Когда сообщил» — дата его письма. Проверьте поля и сохраните.", "info");
         } }, "Сделать инициатором");
@@ -637,6 +641,88 @@ function openDraftFromChat() {
   notice("Черновик из чата: проверьте поля и сохраните.", "info");
 }
 
+// ---------- похожие обращения, связанные тест-кейсы и пункты ТЗ ----------
+
+let relatedSeq = 0;  // ответ на устаревший запрос (переключились на другое обращение) не рисуется
+
+async function loadRelated() {
+  const seq = ++relatedSeq;
+  const box = $("ip-related");
+  box.replaceChildren(el("p", { class: "hint" }, "Ищу похожие и связанные…"));
+  try {
+    let data;
+    if (ISS.issue) {
+      data = await api(`/api/issues/${ISS.issue.id}/related`);
+    } else {
+      const v = readForm();
+      if (!v.title && !v.description && !v.error_text && !v.objects.length) {
+        box.replaceChildren(el("p", { class: "hint" }, "Сначала заполните тему, описание или объекты."));
+        return;
+      }
+      data = await api("/api/issues/related", json("POST",
+        { title: v.title, description: v.description, error_text: v.error_text, objects: v.objects }));
+    }
+    if (seq === relatedSeq) renderRelated(data);
+  } catch (e) {
+    if (seq === relatedSeq) box.replaceChildren(el("p", { class: "hint" }, `Не удалось найти: ${e.message}`));
+  }
+}
+
+function addToList(name, value) {
+  const items = splitList(field(name).value);
+  if (!items.includes(value)) items.push(value);
+  field(name).value = items.join(", ");
+}
+
+function whyLine(x) {
+  return el("span", { class: "mat-sub" }, x.why.join(" · "));
+}
+
+function renderRelated(data) {
+  const box = $("ip-related");
+  const groups = [];
+  const linkedTests = () => splitList(field("test_case_ids").value);
+  const linkedReqs = () => splitList(field("requirement_ids").value);
+
+  if (data.issues.length) {
+    groups.push(el("h3", {}, "Похожие обращения — возможные дубли"), el("ul", { class: "related-list" },
+      ...data.issues.map((x) => {
+        const mark = el("button", { type: "button", class: "btn small", onclick: () => {
+          field("duplicate_of").value = x.id;
+          field("status").value = "duplicate";
+          notice(`Отмечено как дубль ${x.number}: статус «дубль». Сохраните, чтобы записать.`, "info");
+        } }, "Это дубль");
+        return el("li", {}, el("div", { class: "related-row" },
+          el("a", { href: `#${x.id}`, onclick: (e) => { e.preventDefault(); openIssue(x.id); } }, `${x.number} · ${x.title}`),
+          el("span", { class: "st" }, x.status_label), ISS.issue?.duplicate_of === x.id ? null : mark), whyLine(x));
+      })));
+  }
+  const linkGroup = (title, items, fieldName, linked, label) => {
+    if (!items.length) return;
+    groups.push(el("h3", {}, title), el("ul", { class: "related-list" }, ...items.map((x) => {
+      const btn = el("button", { type: "button", class: "btn small" }, "Связать");
+      const sync = () => {
+        const on = linked().includes(x.num);
+        btn.textContent = on ? "Связан" : "Связать";
+        btn.disabled = on;
+      };
+      btn.addEventListener("click", () => {
+        addToList(fieldName, x.num);
+        sync();
+        notice("Связь добавлена в поле «Связи». Сохраните, чтобы записать.", "info");
+      });
+      sync();
+      return el("li", {}, el("div", { class: "related-row" }, el("span", {}, label(x)), btn), whyLine(x));
+    })));
+  };
+  linkGroup("Тест-кейсы ПиМИ", data.test_cases, "test_case_ids", linkedTests,
+    (x) => [`№ ${x.num}`, x.function, x.section, x.result ? `результат: ${x.result}` : ""].filter(Boolean).join(" · "));
+  linkGroup("Пункты плана тестирования ТЗ", data.requirements, "requirement_ids", linkedReqs,
+    (x) => [`п. ${x.num}`, x.object, x.group].filter(Boolean).join(" · "));
+  box.replaceChildren(...(groups.length ? groups : [el("p", { class: "hint" },
+    "Похожих обращений, тест-кейсов и пунктов ТЗ не найдено.")]));
+}
+
 // ---------- запуск ----------
 
 async function initIssues() {
@@ -656,6 +742,7 @@ async function initIssues() {
   $("filters").addEventListener("submit", (e) => { e.preventDefault(); loadIssues(); });
 
   $("new-issue").addEventListener("click", newIssue);
+  $("ip-related-find").addEventListener("click", loadRelated);
   // «Из письма…»: в шапке — новое обращение по письму, в карточке — дозаполнить открытое
   let emailTarget = "new";
   $("new-from-email").addEventListener("click", () => { emailTarget = "new"; $("email-file").click(); });

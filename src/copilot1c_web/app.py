@@ -236,6 +236,18 @@ def issues_comment(issue_id: int, body: Annotated[dict, Body()]) -> dict:
     return _core_call("POST", f"/issues/{issue_id}/comments", json=body)
 
 
+@app.get("/api/issues/{issue_id}/related")
+def issues_related(issue_id: int) -> dict:
+    """Похожие обращения и связанные тест-кейсы ПиМИ и пункты ТЗ (считает ядро)."""
+    return _core_call("GET", f"/issues/{issue_id}/related")
+
+
+@app.post("/api/issues/related")
+def issues_related_draft(body: Annotated[dict, Body()]) -> dict:
+    """То же для черновика: новое обращение в карточке или карточка в чате."""
+    return _core_call("POST", "/issues/related", json=body)
+
+
 @app.post("/api/issues/from-email")
 def issues_from_email(file: Annotated[UploadFile, File()]) -> dict:
     """Письмо .msg/.eml → черновик обращения от ядра (инициатор, тема, текст, цепочка). Ничего не сохраняет."""

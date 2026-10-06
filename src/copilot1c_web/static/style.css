@@ -294,3 +294,17 @@ body.drawer-open { overflow: hidden; }
 .issue-why ul { margin: 6px 0 0; padding-left: 18px; }
 @media (max-width: 900px) { .issue-card-fields { grid-template-columns: 1fr; } }
 .source-panel[hidden] { display: none; }  /* display:flex выше перебивал атрибут hidden */
+
+/* Обращения: похожие и связанные */
+.related-box .related, .related-box .related-actions { grid-column: 1 / -1; }
+.related h3 { margin: 8px 0 4px; font-size: 13px; font-weight: 600; color: var(--muted); }
+.related h3:first-child { margin-top: 0; }
+.related-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.related-list li { padding: 8px 10px; border: 1px solid var(--line-soft); border-radius: 8px; background: var(--surface-2);
+  display: flex; flex-direction: column; gap: 2px; font-size: 14px; }
+.related-row { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
+.related-row > :first-child { flex: 1 1 260px; min-width: 0; overflow-wrap: anywhere; }
+.related .hint { margin: 0; }
+.issue-similar { font-size: 13px; padding: 8px 10px; border-radius: 8px; background: var(--surface); border: 1px solid var(--warn-line); }
+.issue-similar[hidden] { display: none; }
+.issue-similar ul { margin: 4px 0 0; padding-left: 18px; }
