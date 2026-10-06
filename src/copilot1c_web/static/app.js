@@ -201,6 +201,7 @@ function feedbackRow(question, answer) {
 function renderAnswer(holder, question, data) {
   holder.replaceChildren();
   const meta = [`ответ за ${data.seconds} с`];
+  if (data.intent?.primary_label && data.intent.primary !== "question") meta.push(`тип: ${data.intent.primary_label}`);
   if (data.sources?.length) meta.push(`фрагментов: ${data.sources.length}`);
   if (data.tools?.length) meta.push(`доп. поиск: ${data.tools.length}`);
   holder.append(el("div", { class: "msg-meta" }, meta.join(" · ")), renderMarkdown(data.answer || "Пустой ответ."));
@@ -217,8 +218,115 @@ function renderAnswer(holder, question, data) {
     });
   }
   holder.after(wrap);
-  wrap.after(feedbackRow(question, data.answer || ""));
-  scrollToEnd(wrap);
+  const fb = feedbackRow(question, data.answer || "");
+  wrap.after(fb);
+  if (data.issue_draft) {
+    const card = issueCard(question, data);
+    fb.after(card);
+    scrollToEnd(card);
+  } else {
+    scrollToEnd(wrap);
+  }
+}
+
+// ---------- сообщение о проблеме: карточка обращения прямо в чате ----------
+
+let issueMeta = null;
+async function loadIssueMeta() {
+  if (!issueMeta) {
+    const r = await fetch("/api/issues/meta", { cache: "no-store" });
+    if (!r.ok) throw new Error(`справочники обращений недоступны (HTTP ${r.status})`);
+    issueMeta = await r.json();
+  }
+  return issueMeta;
+}
+
+function analyst() {
+  try { return localStorage.getItem("copilot.analyst") || null; } catch (e) { return null; }
+}
+
+function intentFeedback(question, data, verdict, extra = {}) {
+  // журнал решений по типу сообщения — материал для настройки эвристик и эталонного набора
+  fetch("/api/intent-feedback", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ question, verdict, intent: data.intent || {}, ...extra }),
+  }).catch(() => {});
+}
+
+function issueCard(question, data) {
+  const d = data.issue_draft;
+  const card = el("section", { class: "issue-card", "aria-label": "Черновик обращения" });
+  const signals = data.intent?.signals || [];
+  const head = el("div", { class: "issue-card-head" },
+    el("strong", {}, "Похоже на сообщение о проблеме"),
+    el("span", { class: "mat-sub" }, "зарегистрировать как обращение?"));
+  const why = signals.length ? el("details", { class: "issue-why" }, el("summary", {}, "Почему так решено"),
+    el("ul", {}, ...signals.map((x) => el("li", {}, x)))) : null;
+
+  const title = el("input", { type: "text", value: d.title || "", maxlength: "500", "aria-label": "Тема обращения" });
+  const category = el("select", { "aria-label": "Категория" });
+  const priority = el("select", { "aria-label": "Приоритет" });
+  const objects = el("input", { type: "text", value: (d.objects || []).join(", "), "aria-label": "Объекты метаданных",
+    placeholder: "объекты через запятую" });
+  loadIssueMeta().then((m) => {
+    category.replaceChildren(...m.categories.map((x) => el("option", { value: x.value }, x.label)));
+    priority.replaceChildren(...m.priorities.map((x) => el("option", { value: x.value }, x.label)));
+    category.value = d.category || "bug";
+    priority.value = d.priority || "medium";
+  }).catch((e) => { note.textContent = e.message; });
+
+  const fields = el("div", { class: "issue-card-fields" },
+    el("label", { class: "fld wide" }, el("span", {}, "Тема"), title),
+    el("label", { class: "fld" }, el("span", {}, "Категория"), category),
+    el("label", { class: "fld" }, el("span", {}, "Приоритет"), priority),
+    el("label", { class: "fld wide" }, el("span", {}, "Объекты"), objects),
+    d.error_text ? el("div", { class: "fld wide" }, el("span", {}, "Текст ошибки 1С"),
+      el("pre", { class: "issue-error mono" }, d.error_text)) : null);
+
+  const draft = () => ({
+    ...d, title: title.value.trim(), category: category.value || d.category, priority: priority.value || d.priority,
+    objects: objects.value.split(/[,;\n]/).map((x) => x.trim()).filter(Boolean),
+    source_ref: `чат, ${new Date().toLocaleString("ru-RU")}`,
+  });
+  const note = el("span", { class: "issue-card-note", "aria-live": "polite" });
+  const me = analyst();
+  if (!me) note.textContent = "Аналитик не выбран — укажите себя в поле «Я» на вкладке «Обращения».";
+
+  const done = (content) => { actions.replaceChildren(content); fields.remove(); if (why) why.remove(); };
+  const register = el("button", { type: "button", class: "btn small primary", onclick: async () => {
+    if (!title.value.trim()) { note.textContent = "Укажите тему обращения."; title.focus(); return; }
+    register.disabled = true;
+    note.textContent = "регистрирую…";
+    try {
+      const r = await fetch("/api/issues", { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...draft(), actor: me }) });
+      const issue = await r.json();
+      if (!r.ok) throw new Error(typeof issue.detail === "string" ? issue.detail : `HTTP ${r.status}`);
+      intentFeedback(question, data, "registered", { issue_id: issue.id });
+      head.replaceChildren(el("strong", {}, `Зарегистрировано обращение ${issue.number}`));
+      done(el("a", { class: "btn small", href: `/issues#${issue.id}`, target: "_blank", rel: "noopener" },
+        `Открыть ${issue.number}`));
+    } catch (e) {
+      note.textContent = `Не зарегистрировано: ${e.message}`;
+      register.disabled = false;
+    }
+  } }, "Зарегистрировать");
+  const edit = el("button", { type: "button", class: "btn small", onclick: () => {
+    // полная карточка в новой вкладке — чат остаётся на месте; черновик передаётся через localStorage
+    try { localStorage.setItem("copilot.issueDraft", JSON.stringify(draft())); } catch (e) { /* нет хранилища */ }
+    intentFeedback(question, data, "edit");
+    window.open("/issues#draft", "_blank", "noopener");
+    note.textContent = "Черновик открыт в новой вкладке «Обращения» — сохраните его там.";
+  } }, "Поправить и зарегистрировать");
+  const notIssue = el("button", { type: "button", class: "btn small", onclick: () => {
+    intentFeedback(question, data, "not_issue");
+    head.replaceChildren(el("span", { class: "mat-sub" }, "Отмечено: это не обращение."));
+    done(el("span"));
+  } }, "Это не обращение");
+  const actions = el("div", { class: "issue-card-actions" }, register, edit, notIssue, note);
+  card.append(head, fields, actions);
+  if (why) card.append(why);
+  return card;
 }
 
 function initChat() {

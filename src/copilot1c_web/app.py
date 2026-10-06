@@ -144,6 +144,21 @@ def feedback(req: FeedbackRequest) -> dict:
     return {"ok": True}
 
 
+class IntentFeedback(BaseModel):
+    question: str = Field(max_length=20000)
+    verdict: str = Field(pattern="^(registered|edit|not_issue)$")
+    intent: dict = Field(default_factory=dict)
+    issue_id: int | None = None
+
+
+@app.post("/api/intent-feedback")
+def intent_feedback(req: IntentFeedback) -> dict:
+    """Что аналитик сделал с предложением зарегистрировать обращение — в .cache/web/intents.jsonl.
+    «not_issue» — ложные срабатывания эвристик, кандидаты в размеченный набор tests/test_intent.py."""
+    _log("intents", req.model_dump())
+    return {"ok": True}
+
+
 MAX_UPLOAD_FILES = 20
 
 

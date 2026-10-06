@@ -276,3 +276,21 @@ body.drawer-open { overflow: hidden; }
 .issue-panel > .notice .btn { margin-left: 8px; vertical-align: middle; }
 .st[hidden] { display: none; }
 .notice.info { background: var(--accent-tint); border-color: #B7D8D4; color: var(--accent-ink); }
+
+/* Чат: карточка обращения в ответе на сообщение о проблеме */
+.issue-card { border: 1px solid var(--warn-line); background: var(--warn-tint); border-radius: 12px; padding: 14px 16px;
+  display: flex; flex-direction: column; gap: 10px; }
+.issue-card-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 12px; }
+.issue-card-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 12px; }
+.issue-card .fld input, .issue-card .fld select { padding: 8px 10px; border: 1px solid #B9BFB5; border-radius: 8px;
+  background: var(--surface); min-height: 40px; color: var(--ink); font-size: 14px; width: 100%; }
+.issue-card .fld.wide { grid-column: 1 / -1; }
+.issue-error { margin: 0; padding: 8px 10px; background: var(--surface); border: 1px solid var(--line); border-radius: 8px;
+  white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13px; max-height: 8em; overflow-y: auto; }
+.issue-card-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.issue-card-note { font-size: 13px; color: var(--muted); }
+.issue-why { font-size: 13px; color: var(--muted); }
+.issue-why summary { cursor: pointer; color: var(--accent); width: fit-content; }
+.issue-why ul { margin: 6px 0 0; padding-left: 18px; }
+@media (max-width: 900px) { .issue-card-fields { grid-template-columns: 1fr; } }
+.source-panel[hidden] { display: none; }  /* display:flex выше перебивал атрибут hidden */

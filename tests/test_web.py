@@ -276,3 +276,15 @@ def test_issue_from_email_and_expand_forwarded(monkeypatch, tmp_path):
     assert calls[-1]["data"] is None
     page = c.get("/issues").text
     assert 'id="new-from-email"' in page and 'id="ip-from-email"' in page and 'accept=".msg,.eml"' in page
+
+
+def test_intent_feedback_logged_and_chat_has_issue_card(monkeypatch, tmp_path):
+    c = _client(monkeypatch, tmp_path)
+    body = {"question": "Не проводится реализация", "verdict": "not_issue", "intent": {"primary": "issue"}}
+    assert c.post("/api/intent-feedback", json=body).json() == {"ok": True}
+    assert c.post("/api/intent-feedback", json={**body, "verdict": "maybe"}).status_code == 422
+    rec = json.loads((tmp_path / "web" / "intents.jsonl").read_text(encoding="utf-8"))
+    assert rec["verdict"] == "not_issue" and rec["intent"] == {"primary": "issue"}
+    js = c.get("/static/app.js").text
+    assert "issueCard" in js and "/api/intent-feedback" in js and "copilot.issueDraft" in js
+    assert "openDraftFromChat" in c.get("/static/issues.js").text

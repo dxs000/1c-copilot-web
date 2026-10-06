@@ -622,6 +622,21 @@ async function fromEmail(file) {
   notice(`${how}${files}. Проверьте поля и сохраните.`, p.confidence === "high" ? "info" : "warn");
 }
 
+// ---------- черновик из чата («Поправить и зарегистрировать») ----------
+
+function openDraftFromChat() {
+  let d = null;
+  try {
+    d = JSON.parse(localStorage.getItem("copilot.issueDraft") || "null");
+    localStorage.removeItem("copilot.issueDraft");  // черновик одноразовый
+  } catch (e) { /* хранилище недоступно */ }
+  newIssue();
+  if (!d) { notice("Черновик из чата не найден — заполните обращение вручную.", "warn"); return; }
+  fillForm({ status: "new", source: "chat", ...d });
+  ISS.extra = { source_ref: d.source_ref || null };
+  notice("Черновик из чата: проверьте поля и сохраните.", "info");
+}
+
 // ---------- запуск ----------
 
 async function initIssues() {
@@ -671,7 +686,8 @@ async function initIssues() {
 
   await loadIssues();
   const h = location.hash.slice(1);
-  if (h === "new") newIssue();
+  if (h === "draft") openDraftFromChat();
+  else if (h === "new") newIssue();
   else if (/^\d+$/.test(h)) openIssue(Number(h));
 }
 
