@@ -261,3 +261,18 @@ body.drawer-open { overflow: hidden; }
   .ip-body fieldset, .ip-body fieldset.fs-2, .new-contact { grid-template-columns: 1fr; }
   .iss-table td.num { text-align: left; }
 }
+
+/* Обращения: разбор письма — цепочка авторов и выбор инициатора */
+.chain { grid-column: 1 / -1; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-2); padding: 10px 12px; }
+.chain[hidden] { display: none; }
+.chain-head { font-size: 13px; font-weight: 600; color: var(--muted); margin-bottom: 6px; }
+.chain-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; max-height: 320px; overflow-y: auto; }
+.chain-list li { padding: 8px 10px; border-radius: 8px; background: var(--surface); border: 1px solid var(--line-soft); }
+.chain-list li.chosen { border-color: var(--ok); }
+.chain-row { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; font-size: 14px; }
+.chain-who { display: flex; flex-direction: column; min-width: 180px; }
+.chain-row .btn, .chain-row .st { margin-left: auto; }
+.chain-excerpt { margin-top: 6px; font-size: 13px; color: var(--muted); white-space: pre-wrap; max-height: 4.5em; overflow: hidden; }
+.issue-panel > .notice .btn { margin-left: 8px; vertical-align: middle; }
+.st[hidden] { display: none; }
+.notice.info { background: var(--accent-tint); border-color: #B7D8D4; color: var(--accent-ink); }

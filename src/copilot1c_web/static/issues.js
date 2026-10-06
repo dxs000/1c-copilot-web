@@ -10,6 +10,7 @@ const ISS = {
   contactId: null,         // выбранный инициатор
   contacts: new Map(),     // подпись в списке подсказок → контакт
   pendingFiles: [],        // файлы, выбранные до создания нового обращения
+  extra: {},               // поля без элементов формы: Message-ID и имя файла письма-источника
   listTimer: null,
 };
 
@@ -180,6 +181,8 @@ function readForm() {
   const dup = field("duplicate_of").value;
   v.duplicate_of = dup ? Number(dup) : null;
   v.initiator_contact_id = ISS.contactId;
+  v.source_message_id = ISS.extra.source_message_id ?? null;
+  v.source_ref = ISS.extra.source_ref ?? null;
   return v;
 }
 
@@ -209,11 +212,12 @@ function dirty() {
   return !$("issue-panel").hidden && (Object.keys(changes()).length > 0 || $("ip-comment").value.trim() !== "");
 }
 
-function notice(text, kind = "") {
+function notice(text, kind = "", action = null) {
   const n = $("ip-notice");
   n.hidden = !text;
   n.className = "notice" + (kind ? " " + kind : "");
   n.textContent = text || "";
+  if (text && action) n.append(" ", el("button", { type: "button", class: "btn small", onclick: action.onclick }, action.label));
 }
 
 // ---------- инициатор ----------
@@ -280,7 +284,8 @@ function renderAttachments(issue) {
     el("a", { href: `/api/issues/${issue.id}/attachments/${a.id}`, target: "_blank", rel: "noopener" }, a.filename),
     el("span", { class: "mat-sub" }, [fmtSize(a.size), a.uploaded_by, fmtTime(a.uploaded_at)].filter(Boolean).join(" · "))));
   const pending = ISS.pendingFiles.map((f) => el("li", { class: "pending" }, f.name,
-    el("span", { class: "mat-sub" }, `${fmtSize(f.size)} · будет прикреплён при сохранении`)));
+    el("span", { class: "mat-sub" }, `${fmtSize(f.size)} · будет прикреплён при сохранении`
+      + (isEmail(f.name) ? " вместе с файлами из письма" : ""))));
   list.replaceChildren(...items, ...pending);
   if (!items.length && !pending.length) list.append(el("li", { class: "hint" }, "Вложений нет."));
 }
@@ -327,6 +332,8 @@ function showPanel() {
 
 function render(issue) {
   ISS.issue = issue;
+  ISS.extra = issue ? { source_message_id: issue.source_message_id, source_ref: issue.source_ref } : {};
+  $("ip-chain").hidden = true;
   notice("");
   setText("ip-saved", "");
   $("ip-contact-form").hidden = true;
@@ -386,9 +393,12 @@ function closePanel(force = false) {
   loadIssues();
 }
 
+const isEmail = (name) => /\.(msg|eml)$/i.test(name || "");
+
 async function uploadTo(id, files) {
   const body = new FormData();
   files.forEach((f) => body.append("files", f, f.name));
+  body.append("expand", "true");  // письма .msg/.eml прикрепляются вместе со скриншотами и логами из них
   const actor = me();
   if (actor) body.append("actor", actor);
   const data = await api(`/api/issues/${id}/attachments`, { method: "POST", body });
@@ -488,6 +498,115 @@ async function addFiles(fileList) {
   }
 }
 
+// ---------- заполнение по письму пользователя ----------
+
+function emailRole(c) {
+  return `${c.role_label}${c.origin === "file" ? "" : ` · ${c.origin_label}`}`;
+}
+
+async function chooseInitiator(c, signatureHint) {
+  // контакт по адресу: найдётся существующий (пустые поля дополнятся подписью) или будет создан
+  if (!c.email && !c.name) return;
+  const sig = signatureHint || c.signature || {};
+  try {
+    const contact = await api("/api/contacts", json("POST", { name: c.name, email: c.email,
+      position: sig.position || null, phone: sig.phone || null, organization: sig.organization || null }));
+    showContact(contact);
+    if (c.date) field("reported_at").value = toLocalInput(c.date);
+  } catch (e) {
+    notice(`Контакт не сохранён: ${e.message}`, "bad");
+  }
+}
+
+function renderChain(p) {
+  const box = $("ip-chain");
+  if (!p.chain?.length) { box.hidden = true; return; }
+  const items = [...p.chain].reverse().map((c) => {  // новые сверху, как в почте
+    const who = el("span", { class: "chain-who" }, el("b", {}, c.name || c.email || "—"),
+      c.email ? el("span", { class: "mat-sub" }, c.email) : null);
+    const meta = el("span", { class: "mat-sub" }, [emailRole(c), c.date ? fmtTime(c.date) : ""].filter(Boolean).join(" · "));
+    const pick = c.chosen ? el("span", { class: "st done" }, "инициатор")
+      : c.role === "analyst" ? null
+        : el("button", { type: "button", class: "btn small", onclick: async () => {
+          await chooseInitiator(c);
+          p.chain.forEach((x) => { x.chosen = x.index === c.index; });
+          renderChain(p);
+          notice(`Инициатор выбран вручную: ${c.name || c.email}${c.email && c.name ? ` (${c.email})` : ""}; ` +
+            "«Когда сообщил» — дата его письма. Проверьте поля и сохраните.", "info");
+        } }, "Сделать инициатором");
+    return el("li", { class: c.chosen ? "chosen" : "" }, el("div", { class: "chain-row" }, who, meta, pick),
+      c.excerpt ? el("div", { class: "chain-excerpt" }, c.excerpt) : null);
+  });
+  box.replaceChildren(el("div", { class: "chain-head" }, `Цепочка письма: ${plural(p.chain.length, "автор", "автора", "авторов")}`),
+    el("ol", { class: "chain-list" }, ...items));
+  box.hidden = false;
+}
+
+async function fromEmail(file) {
+  if (!file) return;
+  if (!isEmail(file.name)) { notice("Нужен файл письма .msg или .eml", "bad"); return; }
+  setText("ip-saved", "разбираю письмо…");
+  let p;
+  try {
+    const body = new FormData();
+    body.append("file", file, file.name);
+    p = await api("/api/issues/from-email", { method: "POST", body });
+  } catch (e) {
+    notice(`Письмо не разобрано: ${e.message}`, "bad");
+    setText("ip-saved", "");
+    return;
+  }
+  setText("ip-saved", "");
+  const reg = p.already_registered;
+  if (reg && reg.id !== ISS.issue?.id) {
+    notice(`Это письмо уже зарегистрировано: ${reg.number} «${reg.title}».`, "warn",
+      { label: `Открыть ${reg.number}`, onclick: () => { ISS.pendingFiles = []; ISS.base = readForm(); openIssue(reg.id); } });
+    return;
+  }
+  // поля из письма заполняют только пустое — набранное аналитиком не затирается
+  const d = p.draft;
+  for (const k of ["title", "description"]) if (d[k] && !field(k).value.trim()) field(k).value = d[k];
+  if (d.reported_at && !field("reported_at").value) field("reported_at").value = toLocalInput(d.reported_at);
+  field("source").value = "email";
+  if (!ISS.extra.source_message_id) ISS.extra = { source_message_id: d.source_message_id, source_ref: d.source_ref };
+
+  const ini = p.initiator;
+  const chosen = p.chain.find((c) => c.chosen);
+  if (p.contact) {
+    await chooseInitiator({ ...chosen, name: p.contact.name, email: p.contact.email }, ini);
+  } else if (ini && p.confidence === "high") {
+    await chooseInitiator(chosen, ini);
+  } else if (ini) {
+    // неуверенный выбор — контакт не создаётся сам: форма заполнена, аналитик подтверждает
+    $("ip-contact-form").hidden = false;
+    $("nc-name").value = ini.name || "";
+    $("nc-email").value = ini.email || "";
+    $("nc-position").value = ini.position || "";
+    $("nc-phone").value = ini.phone || "";
+    $("nc-org").value = ini.organization || "";
+  }
+  renderChain(p);
+
+  if (ISS.issue) {
+    try {
+      const failed = await uploadTo(ISS.issue.id, [file]);
+      const card = await api(`/api/issues/${ISS.issue.id}`);
+      ISS.issue.attachments = card.attachments;
+      renderAttachments(card);
+      renderHistory(card);
+      if (failed.length) notice(`Не прикреплено: ${failed.join("; ")}`, "bad");
+    } catch (e) {
+      notice(`Письмо не прикреплено: ${e.message}`, "bad");
+    }
+  } else {
+    ISS.pendingFiles.push(file);
+    renderAttachments(null);
+  }
+  const files = p.files?.length ? `; из письма будет прикреплено файлов: ${p.files.length}` : "";
+  const how = ini ? `Инициатор: ${ini.name}${ini.email ? ` (${ini.email})` : ""} — ${p.reason}` : p.reason;
+  notice(`${how}${files}. Проверьте поля и сохраните.`, p.confidence === "high" ? "info" : "warn");
+}
+
 // ---------- запуск ----------
 
 async function initIssues() {
@@ -507,6 +626,21 @@ async function initIssues() {
   $("filters").addEventListener("submit", (e) => { e.preventDefault(); loadIssues(); });
 
   $("new-issue").addEventListener("click", newIssue);
+  // «Из письма…»: в шапке — новое обращение по письму, в карточке — дозаполнить открытое
+  let emailTarget = "new";
+  $("new-from-email").addEventListener("click", () => { emailTarget = "new"; $("email-file").click(); });
+  $("ip-from-email").addEventListener("click", () => { emailTarget = "card"; $("email-file").click(); });
+  $("email-file").addEventListener("change", async () => {
+    const file = $("email-file").files[0];
+    $("email-file").value = "";
+    if (!file) return;
+    if (emailTarget === "new") {
+      if (dirty() && !confirm("Есть несохранённые изменения. Начать новое обращение и отбросить их?")) return;
+      ISS.base = readForm();  // вопрос уже задан — newIssue не спрашивает повторно
+      newIssue();
+    }
+    await fromEmail(file);
+  });
   $("ip-close").addEventListener("click", () => closePanel());
   $("ip-cancel").addEventListener("click", () => closePanel());
   $("backdrop").addEventListener("click", () => closePanel());

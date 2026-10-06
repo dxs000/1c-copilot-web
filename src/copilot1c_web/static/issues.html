@@ -29,7 +29,9 @@
       <select id="me" aria-label="Аналитик, от имени которого вносятся изменения"></select>
       <input id="me-text" type="text" placeholder="Ваше имя" hidden>
     </label>
+    <button class="btn" type="button" id="new-from-email" title="Новое обращение по письму пользователя (.msg, .eml)">Из письма…</button>
     <button class="btn primary" type="button" id="new-issue">+ Новое обращение</button>
+    <input type="file" id="email-file" class="visually-hidden" accept=".msg,.eml" tabindex="-1">
   </div>
 
   <form class="filters" id="filters" role="search">
@@ -81,9 +83,11 @@
           <input id="ip-contact-q" type="text" list="contacts" placeholder="Начните вводить имя, e-mail или организацию"
                  aria-label="Инициатор">
           <button class="btn small" type="button" id="ip-contact-new">Новый контакт</button>
+          <button class="btn small" type="button" id="ip-from-email" title="Заполнить по письму пользователя (.msg, .eml)">Из письма…</button>
         </div>
         <small class="hint" id="ip-contact-info"></small>
       </div>
+      <div class="chain" id="ip-chain" hidden></div>
       <div class="new-contact" id="ip-contact-form" hidden>
         <label class="fld"><span>Имя</span><input id="nc-name" type="text"></label>
         <label class="fld"><span>E-mail</span><input id="nc-email" type="email"></label>

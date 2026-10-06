@@ -221,14 +221,23 @@ def issues_comment(issue_id: int, body: Annotated[dict, Body()]) -> dict:
     return _core_call("POST", f"/issues/{issue_id}/comments", json=body)
 
 
+@app.post("/api/issues/from-email")
+def issues_from_email(file: Annotated[UploadFile, File()]) -> dict:
+    """Письмо .msg/.eml → черновик обращения от ядра (инициатор, тема, текст, цепочка). Ничего не сохраняет."""
+    part = ("file", (file.filename or "письмо", file.file.read(), file.content_type or "application/octet-stream"))
+    return _core_call("POST", "/issues/from-email", files=[part])
+
+
 @app.post("/api/issues/{issue_id}/attachments")
 def issues_attach(issue_id: int, files: Annotated[list[UploadFile], File()],
-                  actor: Annotated[str | None, Form()] = None) -> dict:
+                  actor: Annotated[str | None, Form()] = None, expand: Annotated[bool, Form()] = False) -> dict:
+    """expand — прикрепить письмо вместе с вложенными в него файлами (разбирает ядро)."""
     if len(files) > MAX_UPLOAD_FILES:
         raise HTTPException(413, f"Не больше {MAX_UPLOAD_FILES} файлов за раз")
     parts = [("files", (f.filename or "файл", f.file.read(), f.content_type or "application/octet-stream"))
              for f in files]
-    return _core_call("POST", f"/issues/{issue_id}/attachments", files=parts, data={"actor": actor} if actor else None)
+    data = {k: v for k, v in (("actor", actor), ("expand", "true" if expand else None)) if v}
+    return _core_call("POST", f"/issues/{issue_id}/attachments", files=parts, data=data or None)
 
 
 @app.get("/api/issues/{issue_id}/attachments/{attachment_id}")

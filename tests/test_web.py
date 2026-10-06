@@ -262,3 +262,17 @@ def test_issue_attachment_download(monkeypatch, tmp_path):
     monkeypatch.setattr(httpx, "get", lambda url, **kw: httpx.Response(404, json={"detail": "Вложение не найдено"}))
     r = c.get("/api/issues/7/attachments/99")
     assert r.status_code == 404 and r.json()["detail"] == "Вложение не найдено"
+
+
+def test_issue_from_email_and_expand_forwarded(monkeypatch, tmp_path):
+    c = _client(monkeypatch, tmp_path)
+    calls = _core_request(monkeypatch, 200, {"draft": {"title": "Ошибка"}, "chain": []})
+    r = c.post("/api/issues/from-email", files={"file": ("fw.msg", b"ole", "application/vnd.ms-outlook")})
+    assert r.status_code == 200 and r.json()["draft"]["title"] == "Ошибка"
+    assert calls[-1]["url"].endswith("/issues/from-email") and calls[-1]["files"][0][1][:2] == ("fw.msg", b"ole")
+    c.post("/api/issues/7/attachments", files=[("files", ("fw.msg", b"ole", "x"))], data={"expand": "true"})
+    assert calls[-1]["data"] == {"expand": "true"}
+    c.post("/api/issues/7/attachments", files=[("files", ("a.txt", b"x", "x"))])
+    assert calls[-1]["data"] is None
+    page = c.get("/issues").text
+    assert 'id="new-from-email"' in page and 'id="ip-from-email"' in page and 'accept=".msg,.eml"' in page
