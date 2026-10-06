@@ -418,15 +418,30 @@ async function save(e) {
       const actor = me();
       if (actor) body.actor = actor;
       const created = await api("/api/issues", json("POST", body));
-      const failed = ISS.pendingFiles.length ? await uploadTo(created.id, ISS.pendingFiles) : [];
+      // Обращение уже создано: ошибки файлов и комментария не должны выглядеть как «не сохранено»
+      const failed = [];
+      if (ISS.pendingFiles.length) {
+        try {
+          failed.push(...await uploadTo(created.id, ISS.pendingFiles));
+        } catch (e) {
+          failed.push(`${ISS.pendingFiles.map((f) => f.name).join(", ")} — ${e.message}`);
+        }
+      }
       ISS.pendingFiles = [];
       const comment = $("ip-comment").value.trim();
-      if (comment) await api(`/api/issues/${created.id}/comments`, json("POST", { text: comment, actor }));
+      if (comment) {
+        try {
+          await api(`/api/issues/${created.id}/comments`, json("POST", { text: comment, actor }));
+        } catch (e) {
+          failed.push(`комментарий — ${e.message}`);
+        }
+      }
       render(await api(`/api/issues/${created.id}`));
       form().scrollTop = 0;
       history.replaceState(null, "", `#${created.id}`);
       if (created.already_registered) notice("Это письмо уже зарегистрировано — открыто существующее обращение.");
-      else if (failed.length) notice(`Обращение создано, но не все файлы прикреплены: ${failed.join("; ")}`, "bad");
+      else if (failed.length) notice(`Обращение ${created.number} создано, но не всё прикреплено: ${failed.join("; ")}. ` +
+        "Файлы можно прикрепить ещё раз в блоке «Вложения».", "bad");
       setText("ip-saved", `создано ${created.number}`);
     } else {
       const diff = changes();
