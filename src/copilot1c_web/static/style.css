@@ -355,3 +355,5 @@ body.drawer-open { overflow: hidden; }
 .expert-result[hidden] { display: none; }
 .expert-result a.btn { align-self: flex-start; text-decoration: none; }
 .expert-files { margin: 0; padding-left: 18px; font-size: 13px; color: var(--muted); }
+.issue-refs li { border-style: solid; border-color: var(--warn-line); background: var(--warn-tint); }
+.issue-refs a::after { content: ""; }

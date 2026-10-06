@@ -225,6 +225,12 @@ function renderAnswer(holder, question, data, files = []) {
       wrap.append(card);
     });
   }
+  if (data.issues?.length) {  // обращения, которые видел агент: упомянутые в вопросе и возможные дубли
+    wrap.append(el("h2", {}, "Обращения"), el("ul", { class: "web-sources issue-refs" }, ...data.issues.map((x) =>
+      el("li", {}, el("a", { href: `/issues#${x.id}`, target: "_blank", rel: "noopener" }, `${x.number} · ${x.title}`),
+        el("span", { class: "mat-sub" }, ` ${x.status || ""} · ${x.kind === "similar"
+          ? `возможный дубль${x.why?.length ? ` (${x.why.join(", ")})` : ""}` : "упомянуто в вопросе"}`)))));
+  }
   if (data.web_sources?.length) {  // найденное в интернете — отдельно от материалов проекта, со ссылками
     wrap.append(el("h2", {}, "Из интернета"), el("ul", { class: "web-sources" }, ...data.web_sources.map((w) =>
       el("li", {}, el("a", { href: w.url, target: "_blank", rel: "noopener noreferrer" }, w.title || w.url),

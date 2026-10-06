@@ -358,3 +358,8 @@ def test_escalations_forwarded_and_downloaded(monkeypatch, tmp_path):
     monkeypatch.setattr(httpx, "get", lambda url, **kw: httpx.Response(404, json={"detail": "x"}))
     assert c.get("/api/escalations/000000000000").status_code == 404
     assert "expertPanel" in c.get("/static/app.js").text and 'id="ip-expert"' in c.get("/issues").text
+
+
+def test_chat_shows_issue_refs(monkeypatch, tmp_path):
+    js = _client(monkeypatch, tmp_path).get("/static/app.js").text
+    assert "data.issues" in js and "возможный дубль" in js
