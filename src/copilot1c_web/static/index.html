@@ -45,10 +45,16 @@
           <button type="button">Что вычеркнули из ДС № 10?</button>
         </div>
         <div class="row">
+          <!-- «+»: файлы и письма к этому вопросу (label — диалог выбора открывает сам браузер) -->
+          <label class="attach-btn" for="chat-files" id="attach" tabindex="0" role="button"
+                 title="Приложить файлы и письма к вопросу" aria-label="Приложить файлы и письма">+</label>
+          <input type="file" id="chat-files" class="visually-hidden" multiple tabindex="-1"
+                 accept=".msg,.eml,.docx,.doc,.rtf,.pdf,.xlsx,.xls,.txt,.log,.csv,.xml,.json,.png,.jpg,.jpeg,.zip">
           <label class="visually-hidden" for="q">Вопрос</label>
           <textarea id="q" rows="2" placeholder="Спросите о проекте: переписка, ТЗ, ДС, ПиМИ…" required></textarea>
           <button class="btn primary" type="submit" id="send">Спросить</button>
         </div>
+        <div class="attached" id="attached" hidden aria-label="Приложенные файлы"></div>
       </form>
     </div>
   </main>

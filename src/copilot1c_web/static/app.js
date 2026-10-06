@@ -157,10 +157,11 @@ function scrollToEnd(node) {
   node.scrollIntoView({ behavior: "smooth", block: "end" });
 }
 
-function addUser(question) {
+function addUser(question, files = []) {
   const empty = $("empty");
   if (empty) empty.remove();
-  const node = el("div", { class: "msg-user" }, question);
+  const node = el("div", { class: "msg-user" }, question,
+    files.length ? el("div", { class: "msg-files" }, ...files.map((f) => el("span", { class: "file-chip" }, f.name))) : null);
   $("messages").append(node);
   scrollToEnd(node);
 }
@@ -198,13 +199,19 @@ function feedbackRow(question, answer) {
   return row;
 }
 
-function renderAnswer(holder, question, data) {
+function renderAnswer(holder, question, data, files = []) {
   holder.replaceChildren();
   const meta = [`ответ за ${data.seconds} с`];
   if (data.intent?.primary_label && data.intent.primary !== "question") meta.push(`тип: ${data.intent.primary_label}`);
   if (data.sources?.length) meta.push(`фрагментов: ${data.sources.length}`);
   if (data.tools?.length) meta.push(`доп. поиск: ${data.tools.length}`);
+  if (data.attachments?.length) meta.push(`приложено: ${data.attachments.length}`);
   holder.append(el("div", { class: "msg-meta" }, meta.join(" · ")), renderMarkdown(data.answer || "Пустой ответ."));
+  const skipped = (data.attachments || []).filter((a) => a.note);
+  if (skipped.length) {
+    holder.append(el("details", { class: "issue-why" }, el("summary", {}, "Что из приложенного учтено не полностью"),
+      el("ul", {}, ...skipped.map((a) => el("li", {}, `${a.filename}: ${a.note}`)))));
+  }
 
   const wrap = el("div", { class: "sources" });
   if (data.sources?.length) {
@@ -221,7 +228,7 @@ function renderAnswer(holder, question, data) {
   const fb = feedbackRow(question, data.answer || "");
   wrap.after(fb);
   if (data.issue_draft) {
-    const card = issueCard(question, data);
+    const card = issueCard(question, data, files);
     fb.after(card);
     scrollToEnd(card);
   } else {
@@ -253,8 +260,8 @@ function intentFeedback(question, data, verdict, extra = {}) {
   }).catch(() => {});
 }
 
-function issueCard(question, data) {
-  const d = data.issue_draft;
+function issueCard(question, data, files = []) {
+  const { initiator, contact, already_registered: registered, ...d } = data.issue_draft;
   const card = el("section", { class: "issue-card", "aria-label": "Черновик обращения" });
   const signals = data.intent?.signals || [];
   const head = el("div", { class: "issue-card-head" },
@@ -275,7 +282,10 @@ function issueCard(question, data) {
     priority.value = d.priority || "medium";
   }).catch((e) => { note.textContent = e.message; });
 
-  const fields = el("div", { class: "issue-card-fields" },
+  const who = initiator ? el("div", { class: "fld wide" }, el("span", {}, "Инициатор — из письма"),
+    el("div", {}, [initiator.name, initiator.email, initiator.position].filter(Boolean).join(" · "),
+      el("span", { class: "mat-sub" }, contact ? " — уже есть в контактах" : " — будет добавлен в контакты"))) : null;
+  const fields = el("div", { class: "issue-card-fields" }, who,
     el("label", { class: "fld wide" }, el("span", {}, "Тема"), title),
     el("label", { class: "fld" }, el("span", {}, "Категория"), category),
     el("label", { class: "fld" }, el("span", {}, "Приоритет"), priority),
@@ -286,8 +296,19 @@ function issueCard(question, data) {
   const draft = () => ({
     ...d, title: title.value.trim(), category: category.value || d.category, priority: priority.value || d.priority,
     objects: objects.value.split(/[,;\n]/).map((x) => x.trim()).filter(Boolean),
-    source_ref: `чат, ${new Date().toLocaleString("ru-RU")}`,
+    source_ref: d.source_ref || `чат, ${new Date().toLocaleString("ru-RU")}`,
   });
+  // контакт инициатора: найденный по e-mail или новый (с должностью и телефоном из подписи)
+  const initiatorId = async () => {
+    if (!initiator) return null;
+    if (contact) return contact.id;
+    const r = await fetch("/api/contacts", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: initiator.name, email: initiator.email, position: initiator.position || null,
+        phone: initiator.phone || null, organization: initiator.organization || null }) });
+    const c = await r.json();
+    if (!r.ok) throw new Error(typeof c.detail === "string" ? c.detail : `контакт: HTTP ${r.status}`);
+    return c.id;
+  };
   const note = el("span", { class: "issue-card-note", "aria-live": "polite" });
   const me = analyst();
   if (!me) note.textContent = "Аналитик не выбран — укажите себя в поле «Я» на вкладке «Обращения».";
@@ -298,12 +319,31 @@ function issueCard(question, data) {
     register.disabled = true;
     note.textContent = "регистрирую…";
     try {
+      const cid = await initiatorId();
       const r = await fetch("/api/issues", { method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...draft(), actor: me }) });
+        body: JSON.stringify({ ...draft(), ...(cid ? { initiator_contact_id: cid } : {}), actor: me }) });
       const issue = await r.json();
       if (!r.ok) throw new Error(typeof issue.detail === "string" ? issue.detail : `HTTP ${r.status}`);
       intentFeedback(question, data, "registered", { issue_id: issue.id });
-      head.replaceChildren(el("strong", {}, `Зарегистрировано обращение ${issue.number}`));
+      let filesNote = "";
+      if (files.length) {  // приложенное к вопросу — во вложения обращения (письма вместе с файлами из них)
+        note.textContent = "прикрепляю файлы…";
+        const body = new FormData();
+        files.forEach((f) => body.append("files", f, f.name));
+        body.append("expand", "true");
+        if (me) body.append("actor", me);
+        try {
+          const ar = await fetch(`/api/issues/${issue.id}/attachments`, { method: "POST", body });
+          const res = await ar.json();
+          if (!ar.ok) throw new Error(typeof res.detail === "string" ? res.detail : `HTTP ${ar.status}`);
+          const ok = (res.attachments || []).filter((a) => !a.error).length;
+          filesNote = ` · вложений: ${ok}`;
+        } catch (e) {
+          filesNote = ` · файлы не прикреплены: ${e.message}`;
+        }
+      }
+      head.replaceChildren(el("strong", {}, `Зарегистрировано обращение ${issue.number}`),
+        filesNote ? el("span", { class: "mat-sub" }, filesNote) : null);
       done(el("a", { class: "btn small", href: `/issues#${issue.id}`, target: "_blank", rel: "noopener" },
         `Открыть ${issue.number}`));
     } catch (e) {
@@ -311,9 +351,12 @@ function issueCard(question, data) {
       register.disabled = false;
     }
   } }, "Зарегистрировать");
-  const edit = el("button", { type: "button", class: "btn small", onclick: () => {
+  const edit = el("button", { type: "button", class: "btn small", onclick: async () => {
     // полная карточка в новой вкладке — чат остаётся на месте; черновик передаётся через localStorage
-    try { localStorage.setItem("copilot.issueDraft", JSON.stringify(draft())); } catch (e) { /* нет хранилища */ }
+    let who = null;
+    try { who = initiator ? { id: await initiatorId(), name: initiator.name, email: initiator.email } : null; } catch (e) { /* без контакта */ }
+    const payload = { ...draft(), contact: who, files: files.map((f) => f.name) };
+    try { localStorage.setItem("copilot.issueDraft", JSON.stringify(payload)); } catch (e) { /* нет хранилища */ }
     intentFeedback(question, data, "edit");
     window.open("/issues#draft", "_blank", "noopener");
     note.textContent = "Черновик открыт в новой вкладке «Обращения» — сохраните его там.";
@@ -324,6 +367,15 @@ function issueCard(question, data) {
     done(el("span"));
   } }, "Это не обращение");
   const actions = el("div", { class: "issue-card-actions" }, register, edit, notIssue, note);
+  if (registered) {  // письмо уже заведено — вместо регистрации ссылка на обращение
+    head.replaceChildren(el("strong", {}, `Это письмо уже зарегистрировано: ${registered.number}`),
+      el("span", { class: "mat-sub" }, `«${registered.title}»`));
+    actions.replaceChildren(el("a", { class: "btn small", href: `/issues#${registered.id}`, target: "_blank",
+      rel: "noopener" }, `Открыть ${registered.number}`));
+    fields.remove();
+    card.append(head, actions);
+    return card;
+  }
   const similar = el("div", { class: "issue-similar", hidden: "" });
   card.append(head, fields, similar, actions);
   if (why) card.append(why);
@@ -365,11 +417,47 @@ function initChat() {
     q.focus();
   });
 
+  // ---------- «+»: файлы и письма к вопросу ----------
+  let chatFiles = [];
+  const MAX_CHAT_FILES = 10;
+  const renderChips = () => {
+    const box = $("attached");
+    box.hidden = !chatFiles.length;
+    box.replaceChildren(...chatFiles.map((f, i) => el("span", { class: "file-chip" }, f.name,
+      el("button", { type: "button", class: "chip-x", "aria-label": `Убрать ${f.name}`, onclick: () => {
+        chatFiles.splice(i, 1);
+        renderChips();
+      } }, "×"))));
+    if (chatFiles.length) box.append(el("span", { class: "mat-sub" }, "файлы учтутся только в этом вопросе"));
+  };
+  const addFiles = (list) => {
+    for (const f of list) {
+      if (chatFiles.length >= MAX_CHAT_FILES) break;
+      if (!chatFiles.some((x) => x.name === f.name && x.size === f.size)) chatFiles.push(f);
+    }
+    renderChips();
+  };
+  $("chat-files").addEventListener("change", () => { addFiles($("chat-files").files); $("chat-files").value = ""; });
+  $("attach").addEventListener("keydown", (e) => {
+    if (e.key === "Enter" || e.key === " ") { e.preventDefault(); $("chat-files").click(); }
+  });
+  const composer = form.closest(".composer");
+  composer.addEventListener("dragover", (e) => { e.preventDefault(); composer.classList.add("over"); });
+  composer.addEventListener("dragleave", () => composer.classList.remove("over"));
+  composer.addEventListener("drop", (e) => {
+    e.preventDefault();
+    composer.classList.remove("over");
+    addFiles(e.dataTransfer.files);
+  });
+
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
     const question = q.value.trim();
     if (question.length < 2) return;
-    addUser(question);
+    const files = chatFiles;
+    chatFiles = [];
+    renderChips();
+    addUser(question, files);
     const hb = el("button", { type: "button", onclick: () => { q.value = question; q.focus(); } },
       question.length > 60 ? question.slice(0, 57) + "…" : question);
     $("history").prepend(el("li", {}, hb));
@@ -377,11 +465,19 @@ function initChat() {
     send.disabled = true;
     const thinking = addThinking();
     try {
-      const r = await fetch("/api/ask", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ question }),
-      });
+      let r;
+      if (files.length) {
+        const body = new FormData();
+        body.append("question", question);
+        files.forEach((f) => body.append("files", f, f.name));
+        r = await fetch("/api/ask-files", { method: "POST", body });
+      } else {
+        r = await fetch("/api/ask", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ question }),
+        });
+      }
       const data = await r.json();
       thinking.done();
       if (!r.ok) {
@@ -389,7 +485,7 @@ function initChat() {
         const detail = typeof data.detail === "string" ? data.detail : "Ошибка запроса";
         thinking.node.replaceChildren(el("p", {}, detail));
       } else {
-        renderAnswer(thinking.node, question, data);
+        renderAnswer(thinking.node, question, data, files);
       }
     } catch (err) {
       thinking.done();

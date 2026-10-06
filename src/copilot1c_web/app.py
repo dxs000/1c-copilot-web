@@ -138,6 +138,30 @@ def ask(req: AskRequest) -> dict:
     return data
 
 
+MAX_CHAT_FILES = 10
+
+
+@app.post("/api/ask-files")
+def ask_files(question: Annotated[str, Form(min_length=2, max_length=2000)],
+              files: Annotated[list[UploadFile], File()]) -> dict:
+    """Вопрос с приложенными файлами («+» в чате) → ядро POST /ask/files. Файлы — контекст этого вопроса,
+    в базу не сохраняются."""
+    if len(files) > MAX_CHAT_FILES:
+        raise HTTPException(413, f"Не больше {MAX_CHAT_FILES} файлов к одному вопросу")
+    question = question.strip()
+    parts = [("files", (f.filename or "файл", f.file.read(), f.content_type or "application/octet-stream"))
+             for f in files]
+    try:
+        data = _core_call("POST", "/ask/files", data={"question": question}, files=parts)
+    except HTTPException as exc:
+        _log("asks", {"question": question, "files": [p[1][0] for p in parts], "error": str(exc.detail)[:500]})
+        raise
+    _log("asks", {"question": question, "files": [p[1][0] for p in parts], "answer": data.get("answer", ""),
+                  "seconds": data.get("seconds"), "steps": data.get("steps"), "tools": data.get("tools", []),
+                  "sources": [x.get("label", "") for x in data.get("sources", [])]})
+    return data
+
+
 @app.post("/api/feedback")
 def feedback(req: FeedbackRequest) -> dict:
     _log("feedback", req.model_dump())

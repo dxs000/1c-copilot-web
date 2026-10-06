@@ -643,8 +643,10 @@ function openDraftFromChat() {
   newIssue();
   if (!d) { notice("Черновик из чата не найден — заполните обращение вручную.", "warn"); return; }
   fillForm({ status: "new", source: "chat", ...d });
-  ISS.extra = { source_ref: d.source_ref || null };
-  notice("Черновик из чата: проверьте поля и сохраните.", "info");
+  ISS.extra = { source_ref: d.source_ref || null, source_message_id: d.source_message_id || null };
+  if (d.contact?.id) showContact(d.contact);
+  const files = d.files?.length ? ` Файлы из чата (${d.files.join(", ")}) прикрепите в блоке «Вложения».` : "";
+  notice(`Черновик из чата: проверьте поля и сохраните.${files}`, "info");
 }
 
 // ---------- похожие обращения, связанные тест-кейсы и пункты ТЗ ----------

@@ -311,3 +311,21 @@ def test_kb_forwarded(monkeypatch, tmp_path):
     r = c.post("/api/issues/7/kb-draft")
     assert r.status_code == 422 and "Решение" in r.json()["detail"]
     assert 'id="ip-kb"' in c.get("/issues").text and "kbPublish" in c.get("/static/issues.js").text
+
+
+def test_ask_files_forwarded_and_logged(monkeypatch, tmp_path):
+    c = _client(monkeypatch, tmp_path)
+    calls = _core_request(monkeypatch, 200, {"answer": "ок", "sources": [], "seconds": 1, "steps": 1, "tools": [],
+                                             "attachments": [{"filename": "fw.msg", "kind": "email"}]})
+    r = c.post("/api/ask-files", data={"question": "  Что с этим делать?  "},
+               files=[("files", ("fw.msg", b"ole", "application/vnd.ms-outlook"))])
+    assert r.status_code == 200 and r.json()["attachments"][0]["kind"] == "email"
+    sent = calls[-1]
+    assert sent["url"].endswith("/ask/files") and sent["data"] == {"question": "Что с этим делать?"}
+    assert sent["files"][0][1][:2] == ("fw.msg", b"ole")
+    log = json.loads((tmp_path / "web" / "asks.jsonl").read_text(encoding="utf-8").splitlines()[-1])
+    assert log["files"] == ["fw.msg"] and log["answer"] == "ок"
+    many = [("files", (f"{i}.txt", b"x", "text/plain")) for i in range(11)]
+    assert c.post("/api/ask-files", data={"question": "Что тут?"}, files=many).status_code == 413
+    page = c.get("/").text
+    assert 'id="attach"' in page and 'for="chat-files"' in page and 'id="attached"' in page
