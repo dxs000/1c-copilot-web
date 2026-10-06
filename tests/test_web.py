@@ -329,3 +329,9 @@ def test_ask_files_forwarded_and_logged(monkeypatch, tmp_path):
     assert c.post("/api/ask-files", data={"question": "Что тут?"}, files=many).status_code == 413
     page = c.get("/").text
     assert 'id="attach"' in page and 'for="chat-files"' in page and 'id="attached"' in page
+
+
+def test_chat_shows_web_sources(monkeypatch, tmp_path):
+    c = _client(monkeypatch, tmp_path)
+    js = c.get("/static/app.js").text
+    assert "web_sources" in js and "Из интернета" in js and "noreferrer" in js

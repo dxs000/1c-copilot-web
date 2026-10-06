@@ -206,6 +206,7 @@ function renderAnswer(holder, question, data, files = []) {
   if (data.sources?.length) meta.push(`фрагментов: ${data.sources.length}`);
   if (data.tools?.length) meta.push(`доп. поиск: ${data.tools.length}`);
   if (data.attachments?.length) meta.push(`приложено: ${data.attachments.length}`);
+  if (data.web_sources?.length) meta.push(`интернет: ${data.web_sources.length}`);
   holder.append(el("div", { class: "msg-meta" }, meta.join(" · ")), renderMarkdown(data.answer || "Пустой ответ."));
   const skipped = (data.attachments || []).filter((a) => a.note);
   if (skipped.length) {
@@ -223,6 +224,11 @@ function renderAnswer(holder, question, data, files = []) {
       card.addEventListener("click", () => openSource(src, question, card));
       wrap.append(card);
     });
+  }
+  if (data.web_sources?.length) {  // найденное в интернете — отдельно от материалов проекта, со ссылками
+    wrap.append(el("h2", {}, "Из интернета"), el("ul", { class: "web-sources" }, ...data.web_sources.map((w) =>
+      el("li", {}, el("a", { href: w.url, target: "_blank", rel: "noopener noreferrer" }, w.title || w.url),
+        el("span", { class: "mat-sub" }, ` ${w.domain || ""}${w.read ? " · прочитано агентом" : ""}`)))));
   }
   holder.after(wrap);
   const fb = feedbackRow(question, data.answer || "");

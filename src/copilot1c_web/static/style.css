@@ -335,3 +335,9 @@ body.drawer-open { overflow: hidden; }
 .chip-x:hover { background: rgba(11, 107, 99, 0.15); }
 .msg-files { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 .composer.over { background: var(--accent-tint); }
+
+/* Чат: источники из интернета */
+.web-sources { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; font-size: 14px; }
+.web-sources li { padding: 8px 12px; border: 1px dashed var(--line); border-radius: var(--radius); background: var(--surface);
+  overflow-wrap: anywhere; }
+.web-sources a::after { content: " ↗"; font-size: 12px; }
