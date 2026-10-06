@@ -196,3 +196,69 @@ def test_file_picker_is_native_label_and_pages_not_cached(monkeypatch, tmp_path)
     assert '<label class="btn primary" for="files" id="pick"' in page.text  # диалог открывается и без скрипта
     assert page.headers["cache-control"] == "no-cache"
     assert c.get("/static/app.js").headers["cache-control"] == "no-cache"
+
+
+# ---------- обращения ----------
+
+def test_issues_page_and_tabs(monkeypatch, tmp_path):
+    c = _client(monkeypatch, tmp_path)
+    page = c.get("/issues").text
+    assert 'id="issue-panel"' in page and 'id="issues"' in page and "/static/issues.js" in page
+    for path in ("/", "/materials", "/issues"):
+        assert 'href="/issues"' in c.get(path).text, path  # вкладка на всех экранах
+    js = c.get("/static/issues.js").text
+    assert "initIssues" in js and "/api/issues" in js and "409" in js
+
+
+def test_issues_calls_are_forwarded(monkeypatch, tmp_path):
+    c = _client(monkeypatch, tmp_path)
+    calls = _core_request(monkeypatch, 200, {"issues": []})
+    assert c.get("/api/issues?open=true&q=КС_Гамма").json() == {"issues": []}
+    assert calls[-1]["method"] == "GET" and calls[-1]["url"].endswith("/issues")
+    assert calls[-1]["params"] == {"open": "true", "q": "КС_Гамма"}
+
+    c.post("/api/issues", json={"title": "Ошибка", "actor": "Иванов И."})
+    assert calls[-1]["method"] == "POST" and calls[-1]["json"] == {"title": "Ошибка", "actor": "Иванов И."}
+    c.patch("/api/issues/7", json={"version": 2, "changes": {"status": "in_progress"}})
+    assert calls[-1]["method"] == "PATCH" and calls[-1]["url"].endswith("/issues/7")
+    c.post("/api/issues/7/comments", json={"text": "ок"})
+    assert calls[-1]["url"].endswith("/issues/7/comments")
+    c.get("/api/issues/meta")
+    assert calls[-1]["url"].endswith("/issues/meta")
+    c.get("/api/contacts?q=смирн")
+    assert calls[-1]["url"].endswith("/contacts") and calls[-1]["params"] == {"q": "смирн", "limit": 50}
+
+    c.post("/api/issues/7/attachments", files=[("files", ("скрин.png", b"png", "image/png"))], data={"actor": "Иванов И."})
+    sent = calls[-1]
+    assert sent["url"].endswith("/issues/7/attachments") and sent["data"] == {"actor": "Иванов И."}
+    assert [(n, f[0], f[1]) for n, f in sent["files"]] == [("files", "скрин.png", b"png")]
+
+
+def test_issue_conflict_passes_current_card(monkeypatch, tmp_path):
+    c = _client(monkeypatch, tmp_path)
+    detail = {"message": "Обращение уже изменено другим аналитиком", "current": {"id": 7, "version": 3}}
+    _core_request(monkeypatch, 409, {"detail": detail})
+    r = c.patch("/api/issues/7", json={"version": 2, "changes": {"priority": "low"}})
+    assert r.status_code == 409 and r.json()["detail"] == detail  # браузер получает свежую карточку
+    _core_request(monkeypatch, 422, {"detail": "Неизвестное значение status: 'забыто'"})
+    assert c.post("/api/issues", json={"title": "x", "status": "забыто"}).json()["detail"].startswith("Неизвестное")
+
+
+def test_issue_attachment_download(monkeypatch, tmp_path):
+    import httpx
+
+    c = _client(monkeypatch, tmp_path)
+    cd = "attachment; filename*=utf-8''%D0%BB%D0%BE%D0%B3.txt"
+    monkeypatch.setattr(httpx, "get", lambda url, **kw: httpx.Response(
+        200, content=b"line1", headers={"content-type": "text/plain; charset=utf-8", "content-disposition": cd}))
+    r = c.get("/api/issues/7/attachments/3")
+    assert r.status_code == 200 and r.content == b"line1" and r.headers["x-content-type-options"] == "nosniff"
+    assert r.headers["content-disposition"] == cd.replace("attachment", "inline")  # текст открывается во вкладке
+    for media, mode in (("image/png", "inline"), ("application/pdf", "inline"), ("image/svg+xml", "attachment"),
+                        ("text/html", "attachment"), ("application/octet-stream", "attachment")):
+        monkeypatch.setattr(httpx, "get", lambda url, m=media, **kw: httpx.Response(
+            200, content=b"x", headers={"content-type": m, "content-disposition": cd}))
+        assert c.get("/api/issues/7/attachments/3").headers["content-disposition"].startswith(mode), media
+    monkeypatch.setattr(httpx, "get", lambda url, **kw: httpx.Response(404, json={"detail": "Вложение не найдено"}))
+    r = c.get("/api/issues/7/attachments/99")
+    assert r.status_code == 404 and r.json()["detail"] == "Вложение не найдено"

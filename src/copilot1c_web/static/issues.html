@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Обращения — 1С Project Copilot</title>
+<link rel="stylesheet" href="/static/style.css">
+<link rel="icon" href="data:,">
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="/">
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#0B6B63" stroke-width="1.8" aria-hidden="true"><rect x="3" y="4" width="18" height="14" rx="3"/><path d="M8 21h8M8 9h8M8 13h5"/></svg>
+    1С Project Copilot
+  </a>
+  <span class="project">Проект: <b id="project">…</b></span>
+  <nav class="tabs" aria-label="Разделы">
+    <a href="/">Чат</a>
+    <a href="/materials">Материалы</a>
+    <a href="/issues" aria-current="page">Обращения</a>
+  </nav>
+  <div class="status" id="status" aria-live="polite"><span class="pill">проверяю систему…</span></div>
+</header>
+
+<main class="issues-page">
+  <div class="issues-head">
+    <h1>Обращения</h1>
+    <label class="me" id="me-wrap">Я:
+      <select id="me" aria-label="Аналитик, от имени которого вносятся изменения"></select>
+      <input id="me-text" type="text" placeholder="Ваше имя" hidden>
+    </label>
+    <button class="btn primary" type="button" id="new-issue">+ Новое обращение</button>
+  </div>
+
+  <form class="filters" id="filters" role="search">
+    <input type="search" id="f-q" placeholder="Поиск: номер, тема, текст ошибки, объект, инициатор" aria-label="Поиск">
+    <select id="f-status" aria-label="Статус"><option value="open">Открытые</option><option value="">Все статусы</option></select>
+    <select id="f-priority" aria-label="Приоритет"><option value="">Любой приоритет</option></select>
+    <select id="f-category" aria-label="Категория"><option value="">Любая категория</option></select>
+    <select id="f-assignee" aria-label="Ответственный"><option value="">Любой ответственный</option></select>
+  </form>
+
+  <section class="card">
+    <div id="issues"><p class="hint">Загружаю список…</p></div>
+  </section>
+</main>
+
+<!-- Карточка обращения: просмотр и правка; та же панель — для нового обращения -->
+<div class="drawer-backdrop" id="backdrop" hidden></div>
+<aside class="issue-panel" id="issue-panel" aria-labelledby="ip-title" hidden>
+  <div class="ip-head">
+    <span class="ip-number mono" id="ip-number"></span>
+    <span class="st" id="ip-status"></span>
+    <button class="icon-btn" type="button" id="ip-close" aria-label="Закрыть карточку">✕</button>
+  </div>
+  <form class="ip-body" id="issue-form" novalidate>
+    <label class="fld wide"><span>Тема</span>
+      <input id="ip-title" name="title" type="text" maxlength="500" required></label>
+
+    <fieldset><legend>Работа</legend>
+      <label class="fld"><span>Статус</span><select name="status"></select></label>
+      <label class="fld"><span>Приоритет</span><select name="priority"></select></label>
+      <label class="fld"><span>Категория</span><select name="category"></select></label>
+      <label class="fld"><span>Ответственный</span><input name="assignee" list="analysts" type="text"></label>
+      <label class="fld"><span>Срок</span><input name="due_date" type="date"></label>
+      <label class="fld"><span>Теги</span><input name="tags" type="text" placeholder="через запятую"></label>
+    </fieldset>
+
+    <fieldset class="fs-2"><legend>Суть проблемы</legend>
+      <label class="fld wide"><span>Описание</span><textarea name="description" rows="4"></textarea></label>
+      <label class="fld wide"><span>Текст ошибки 1С</span><textarea name="error_text" rows="3" class="mono"></textarea></label>
+      <label class="fld wide"><span>Шаги воспроизведения</span><textarea name="steps" rows="3"></textarea></label>
+      <label class="fld"><span>Ожидалось</span><textarea name="expected" rows="2"></textarea></label>
+      <label class="fld"><span>Получено</span><textarea name="actual" rows="2"></textarea></label>
+    </fieldset>
+
+    <fieldset class="fs-2"><legend>Инициатор</legend>
+      <div class="fld wide contact-pick">
+        <span>Кто сообщил</span>
+        <div class="contact-row">
+          <input id="ip-contact-q" type="text" list="contacts" placeholder="Начните вводить имя, e-mail или организацию"
+                 aria-label="Инициатор">
+          <button class="btn small" type="button" id="ip-contact-new">Новый контакт</button>
+        </div>
+        <small class="hint" id="ip-contact-info"></small>
+      </div>
+      <div class="new-contact" id="ip-contact-form" hidden>
+        <label class="fld"><span>Имя</span><input id="nc-name" type="text"></label>
+        <label class="fld"><span>E-mail</span><input id="nc-email" type="email"></label>
+        <label class="fld"><span>Организация</span><input id="nc-org" type="text"></label>
+        <label class="fld"><span>Должность</span><input id="nc-position" type="text"></label>
+        <label class="fld"><span>Телефон</span><input id="nc-phone" type="text"></label>
+        <div class="fld"><span>&nbsp;</span><button class="btn small primary" type="button" id="nc-save">Добавить контакт</button></div>
+      </div>
+      <label class="fld"><span>Когда сообщил</span><input name="reported_at" type="datetime-local"></label>
+      <label class="fld"><span>Источник</span><select name="source"></select></label>
+    </fieldset>
+
+    <fieldset class="fs-2"><legend>Окружение</legend>
+      <label class="fld"><span>База</span><input name="infobase" type="text" placeholder="рабочая / тестовая"></label>
+      <label class="fld"><span>Сервер</span><input name="server" type="text"></label>
+      <label class="fld"><span>Версия конфигурации</span><input name="config_version" type="text"></label>
+      <label class="fld"><span>Версия платформы</span><input name="platform_version" type="text"></label>
+      <label class="fld wide"><span>Объекты метаданных</span>
+        <input name="objects" type="text" placeholder="через запятую: Справочник.Номенклатура, Документ.РеализацияТоваровУслуг"></label>
+    </fieldset>
+
+    <fieldset><legend>Связи</legend>
+      <label class="fld"><span>Тест-кейсы ПиМИ</span><input name="test_case_ids" type="text" placeholder="№ через запятую"></label>
+      <label class="fld"><span>Пункты ТЗ</span><input name="requirement_ids" type="text" placeholder="№ через запятую"></label>
+      <label class="fld"><span>Дубль обращения №</span><input name="duplicate_of" type="number" min="1"></label>
+    </fieldset>
+
+    <fieldset class="fs-2"><legend>Итог</legend>
+      <label class="fld wide"><span>Причина</span><textarea name="root_cause" rows="2"></textarea></label>
+      <label class="fld wide"><span>Решение</span><textarea name="resolution" rows="3"></textarea></label>
+    </fieldset>
+
+    <fieldset><legend>Вложения</legend>
+      <ul class="att-list" id="ip-attachments"></ul>
+      <div class="att-drop" id="ip-drop">
+        <input type="file" id="ip-files" class="visually-hidden" multiple tabindex="-1">
+        <label class="btn small" for="ip-files" tabindex="0" role="button">Прикрепить файлы</label>
+        <small class="hint" id="ip-files-hint">или перетащите сюда скриншоты, логи, письма</small>
+      </div>
+    </fieldset>
+
+    <fieldset id="ip-history-box"><legend>История</legend>
+      <ol class="timeline" id="ip-history"></ol>
+      <div class="comment-row">
+        <textarea id="ip-comment" rows="2" placeholder="Комментарий: что сделано, что ждём, договорённости"></textarea>
+        <button class="btn small" type="button" id="ip-comment-send">Добавить</button>
+      </div>
+    </fieldset>
+  </form>
+  <p class="notice" id="ip-notice" role="status" hidden></p>
+  <div class="ip-foot">
+    <span class="ip-saved" id="ip-saved" aria-live="polite"></span>
+    <button class="btn" type="button" id="ip-cancel">Закрыть</button>
+    <button class="btn primary" type="submit" form="issue-form" id="ip-save">Сохранить</button>
+  </div>
+</aside>
+<datalist id="analysts"></datalist>
+<datalist id="contacts"></datalist>
+
+<script src="/static/app.js"></script>
+<script src="/static/issues.js"></script>
+</body>
+</html>

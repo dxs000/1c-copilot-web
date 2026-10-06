@@ -1,8 +1,8 @@
 """Веб-приложение 1С Project Copilot.
 
-Экраны «Чат» и «Материалы», состояние системы и вопросы к агенту с источниками. Вопросы уходят в
-демон ядра (служба copilot1c-core, HTTP на 127.0.0.1:8100; адрес — COPILOT_CORE_URL): у ядра свои
-настройки, индекс и кэш. Загрузка материалов через веб — заглушка до шага 3.
+Экраны «Чат», «Материалы» и «Обращения», состояние системы и вопросы к агенту с источниками. Всё
+уходит в демон ядра (служба copilot1c-core, HTTP на 127.0.0.1:8100; адрес — COPILOT_CORE_URL): у ядра
+свои настройки, индекс, база и файлы. Веб только пересылает запросы и отдаёт страницы.
 
 Запуск: copilot1c-web  (порт 80; для разработки: copilot1c-web --port 8080 --reload)
 """
@@ -20,8 +20,8 @@ from typing import Annotated
 
 import httpx
 from copilot1c.config import get_settings
-from fastapi import FastAPI, File, HTTPException, UploadFile
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi import Body, FastAPI, File, Form, HTTPException, Request, UploadFile
+from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -161,7 +161,9 @@ def _core_call(method: str, path: str, **kw) -> dict:
     except ValueError:
         data = {}
     if r.status_code != 200:
-        detail = data.get("detail") if isinstance(data.get("detail"), str) else f"Ошибка ядра: HTTP {r.status_code}"
+        detail = data.get("detail")
+        if not isinstance(detail, str | dict):  # dict — например, 409 обращений с актуальной карточкой
+            detail = f"Ошибка ядра: HTTP {r.status_code}"
         raise HTTPException(r.status_code, detail)
     return data
 
@@ -183,6 +185,94 @@ def upload(files: Annotated[list[UploadFile], File()]) -> dict:
 def materials(limit: int = 200) -> dict:
     """Реестр загруженных материалов и их статусы (по данным демона ядра)."""
     return _core_call("GET", "/materials", params={"limit": limit})
+
+
+# ---------- обращения: те же методы, что у демона ядра (/issues…, /contacts), под префиксом /api ----------
+# Проверку полей, историю и защиту от одновременной правки ведёт ядро; веб пересылает запрос как есть.
+
+@app.get("/api/issues/meta")
+def issues_meta() -> dict:
+    return _core_call("GET", "/issues/meta")
+
+
+@app.get("/api/issues")
+def issues_list(request: Request) -> dict:
+    """Фильтры (status, priority, category, assignee, open, q, limit) пересылаются как есть."""
+    return _core_call("GET", "/issues", params=dict(request.query_params))
+
+
+@app.post("/api/issues")
+def issues_create(body: Annotated[dict, Body()]) -> dict:
+    return _core_call("POST", "/issues", json=body)
+
+
+@app.get("/api/issues/{issue_id}")
+def issues_get(issue_id: int) -> dict:
+    return _core_call("GET", f"/issues/{issue_id}")
+
+
+@app.patch("/api/issues/{issue_id}")
+def issues_patch(issue_id: int, body: Annotated[dict, Body()]) -> dict:
+    return _core_call("PATCH", f"/issues/{issue_id}", json=body)
+
+
+@app.post("/api/issues/{issue_id}/comments")
+def issues_comment(issue_id: int, body: Annotated[dict, Body()]) -> dict:
+    return _core_call("POST", f"/issues/{issue_id}/comments", json=body)
+
+
+@app.post("/api/issues/{issue_id}/attachments")
+def issues_attach(issue_id: int, files: Annotated[list[UploadFile], File()],
+                  actor: Annotated[str | None, Form()] = None) -> dict:
+    if len(files) > MAX_UPLOAD_FILES:
+        raise HTTPException(413, f"Не больше {MAX_UPLOAD_FILES} файлов за раз")
+    parts = [("files", (f.filename or "файл", f.file.read(), f.content_type or "application/octet-stream"))
+             for f in files]
+    return _core_call("POST", f"/issues/{issue_id}/attachments", files=parts, data={"actor": actor} if actor else None)
+
+
+@app.get("/api/issues/{issue_id}/attachments/{attachment_id}")
+def issues_attachment(issue_id: int, attachment_id: int) -> Response:
+    """Файл вложения от ядра: тот же тип и имя (Content-Disposition), чтобы браузер открыл или скачал его."""
+    try:
+        r = httpx.get(f"{CORE_URL}/issues/{issue_id}/attachments/{attachment_id}", timeout=CORE_TIMEOUT)
+    except httpx.HTTPError as exc:
+        raise HTTPException(503, f"Ядро недоступно ({CORE_URL})") from exc
+    if r.status_code != 200:
+        try:
+            detail = r.json().get("detail")
+        except ValueError:
+            detail = None
+        raise HTTPException(r.status_code, detail if isinstance(detail, str) else f"Ошибка ядра: HTTP {r.status_code}")
+    media = r.headers.get("content-type", "application/octet-stream")
+    headers = {"X-Content-Type-Options": "nosniff"}  # браузер не угадывает тип: файл заказчика не станет страницей
+    disposition = r.headers.get("content-disposition", "")
+    if _viewable(media):  # скриншоты, PDF и тексты открываются во вкладке, остальное скачивается
+        disposition = disposition.replace("attachment", "inline", 1)
+    if disposition:
+        headers["Content-Disposition"] = disposition
+    return Response(r.content, media_type=media, headers=headers)
+
+
+def _viewable(media: str) -> bool:
+    """Безопасно показать в браузере: картинки (кроме SVG — в нём бывают скрипты), PDF, простой текст."""
+    m = media.split(";", 1)[0].strip().lower()
+    return (m.startswith("image/") and m != "image/svg+xml") or m in ("application/pdf", "text/plain")
+
+
+@app.get("/api/contacts")
+def contacts(q: str = "", limit: int = 50) -> dict:
+    return _core_call("GET", "/contacts", params={"q": q, "limit": limit})
+
+
+@app.post("/api/contacts")
+def contacts_upsert(body: Annotated[dict, Body()]) -> dict:
+    return _core_call("POST", "/contacts", json=body)
+
+
+@app.get("/issues")
+def issues_page() -> FileResponse:
+    return FileResponse(STATIC / "issues.html")
 
 
 @app.get("/")

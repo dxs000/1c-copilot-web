@@ -180,3 +180,84 @@ label.btn { display: inline-flex; align-items: center; user-select: none; }
   .mat-table tr { padding: 8px 0; border-bottom: 1px solid var(--line-soft); }
   .mat-table td { border: 0; padding: 4px 0; }
 }
+
+/* Обращения: список, фильтры, карточка-панель справа */
+.issues-page { max-width: 1280px; margin: 0 auto; padding: 28px 32px; }
+.issues-head { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin-bottom: 16px; }
+.issues-head h1 { margin: 0; font-size: 22px; font-weight: 600; }
+.me { margin-left: auto; display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--muted); }
+.me select, .me input, .filters input, .filters select, .fld input, .fld select, .fld textarea, .comment-row textarea,
+.contact-row input { padding: 8px 10px; border: 1px solid #B9BFB5; border-radius: 8px; background: var(--surface); min-height: 40px; }
+.filters { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 16px; }
+.filters input[type="search"] { flex: 1 1 320px; }
+.filters select { flex: 0 1 200px; }
+.me select:focus, .me input:focus, .filters :focus, .fld :focus, .comment-row textarea:focus, .contact-row input:focus,
+.link-btn:focus-visible, .icon-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.iss-table th:nth-child(1) { width: 92px; }
+.iss-table th:nth-child(2) { width: auto; }
+.iss-table th:nth-child(3) { width: 150px; }
+.iss-table th:nth-child(4) { width: 110px; }
+.iss-table th:nth-child(5) { width: 150px; }
+.iss-table th:nth-child(6) { width: 130px; }
+.iss-table th:nth-child(7) { width: 60px; }
+.iss-table tr.clickable { cursor: pointer; }
+.iss-table tr.clickable:hover td { background: var(--surface-2); }
+.iss-table td.num { text-align: right; color: var(--muted); white-space: nowrap; }
+.link-btn { border: 0; background: none; padding: 0; color: var(--ink); font-weight: 500; text-align: left; cursor: pointer; overflow-wrap: anywhere; }
+.link-btn:hover { color: var(--accent); text-decoration: underline; }
+.list-count { margin: 10px 0 0; }
+.st.progress { background: var(--warn-tint); color: var(--warn-ink); }
+.st.active-static { background: var(--accent-tint); color: var(--accent); }
+.prio { font-size: 13px; color: var(--muted); }
+.prio.high { color: var(--warn-ink); font-weight: 600; }
+.prio.crit { color: var(--bad); font-weight: 600; }
+
+.drawer-backdrop { position: fixed; inset: 0; background: rgba(26, 29, 27, 0.28); z-index: 20; }
+body.drawer-open { overflow: hidden; }
+.issue-panel { position: fixed; top: 0; right: 0; bottom: 0; width: min(820px, 100vw); z-index: 21; background: var(--surface);
+  box-shadow: -10px 0 30px rgba(0, 0, 0, 0.16); display: flex; flex-direction: column; }
+.issue-panel[hidden], .drawer-backdrop[hidden] { display: none; }
+.ip-head { display: flex; align-items: center; gap: 12px; padding: 12px 20px; border-bottom: 1px solid var(--line); }
+.ip-number { font-weight: 600; font-size: 15px; }
+.ip-body { flex: 1 1 auto; overflow-y: auto; padding: 16px 20px 24px; display: flex; flex-direction: column; gap: 14px; }
+.ip-body fieldset { border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px 14px; margin: 0;
+  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px 12px; }
+.ip-body fieldset[hidden] { display: none; }
+.ip-body legend { padding: 0 6px; font-size: 12px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); }
+.fld { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--muted); min-width: 0; }
+.fld > span { font-weight: 500; }
+.fld input, .fld select, .fld textarea { color: var(--ink); font-size: 14px; width: 100%; }
+.fld textarea { resize: vertical; }
+.fld.wide, .contact-pick, .new-contact, .att-list, .att-drop, .timeline, .comment-row { grid-column: 1 / -1; }
+.ip-body > .fld.wide input { font-size: 17px; font-weight: 600; }
+.ip-body fieldset.fs-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.contact-row, .comment-row { display: flex; gap: 8px; align-items: flex-start; }
+.contact-row input, .comment-row textarea { flex: 1 1 auto; color: var(--ink); font-size: 14px; }
+.new-contact { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px 12px; padding: 12px; border-radius: 10px; background: var(--surface-2); }
+.new-contact[hidden] { display: none; }
+.btn.small { min-height: 40px; padding: 8px 12px; font-size: 14px; white-space: nowrap; }
+.notice.bad { background: var(--bad-tint); border-color: var(--bad); color: var(--bad); }
+.notice.warn { background: var(--warn-tint); }
+.issue-panel > .notice { margin: 0; border-radius: 0; border-width: 1px 0 0; padding: 10px 20px; }
+.att-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; font-size: 14px; }
+.att-list li { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; }
+.att-list li.pending { color: var(--muted); }
+.att-drop { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border: 2px dashed #B9BFB5; border-radius: 10px; }
+.att-drop.over { border-color: var(--accent); background: var(--accent-tint); }
+.att-drop .hint { margin: 0; }
+.timeline { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; font-size: 14px; max-height: 360px; overflow-y: auto; }
+.ev { border-left: 3px solid var(--line); padding: 2px 0 2px 10px; }
+.ev-status { border-left-color: var(--accent); }
+.ev-comment { white-space: pre-wrap; }
+.ev.ev-comment { border-left-color: var(--warn-line); }
+.ev-head { font-size: 12px; color: var(--muted); }
+.ev-head b { color: var(--ink); font-weight: 600; }
+.ip-foot { display: flex; align-items: center; gap: 10px; padding: 12px 20px; border-top: 1px solid var(--line); background: var(--surface-2); }
+.ip-saved { margin-right: auto; font-size: 13px; color: var(--muted); }
+
+@media (max-width: 900px) {
+  .issues-page { padding: 20px 16px; }
+  .me { margin-left: 0; }
+  .ip-body fieldset, .ip-body fieldset.fs-2, .new-contact { grid-template-columns: 1fr; }
+  .iss-table td.num { text-align: left; }
+}
