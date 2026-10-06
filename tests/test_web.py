@@ -335,3 +335,26 @@ def test_chat_shows_web_sources(monkeypatch, tmp_path):
     c = _client(monkeypatch, tmp_path)
     js = c.get("/static/app.js").text
     assert "web_sources" in js and "Из интернета" in js and "noreferrer" in js
+
+
+def test_escalations_forwarded_and_downloaded(monkeypatch, tmp_path):
+    import httpx
+
+    c = _client(monkeypatch, tmp_path)
+    calls = _core_request(monkeypatch, 200, {"id": "abc123def456", "filename": "Claude — вопрос.zip", "size": 10,
+                                             "files": [{"path": "PROMPT.md", "what": "задача"}], "raw_attachments": False})
+    r = c.post("/api/escalations", data={"payload": '{"question": "Почему?"}'},
+               files=[("files", ("журнал.log", b"line1", "text/plain"))])
+    assert r.status_code == 200 and r.json()["id"] == "abc123def456"
+    assert calls[-1]["url"].endswith("/escalations") and calls[-1]["data"] == {"payload": '{"question": "Почему?"}'}
+    assert calls[-1]["files"][0][1][:2] == ("журнал.log", b"line1")
+    log = json.loads((tmp_path / "web" / "escalations.jsonl").read_text(encoding="utf-8"))
+    assert log["filename"] == "Claude — вопрос.zip"
+    cd = "attachment; filename*=utf-8''Claude.zip"
+    monkeypatch.setattr(httpx, "get", lambda url, **kw: httpx.Response(200, content=b"PK",
+                                                                        headers={"content-disposition": cd}))
+    d = c.get("/api/escalations/abc123def456")
+    assert d.content == b"PK" and d.headers["content-type"] == "application/zip" and d.headers["content-disposition"] == cd
+    monkeypatch.setattr(httpx, "get", lambda url, **kw: httpx.Response(404, json={"detail": "x"}))
+    assert c.get("/api/escalations/000000000000").status_code == 404
+    assert "expertPanel" in c.get("/static/app.js").text and 'id="ip-expert"' in c.get("/issues").text

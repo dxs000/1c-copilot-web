@@ -162,6 +162,34 @@ def ask_files(question: Annotated[str, Form(min_length=2, max_length=2000)],
     return data
 
 
+@app.post("/api/escalations")
+def escalations_create(payload: Annotated[str, Form()] = "{}",
+                       files: Annotated[list[UploadFile] | None, File()] = None) -> dict:
+    """Пакет для эксперта (Claude): собирает ядро (POST /escalations), веб пересылает вопрос, материалы и файлы."""
+    if files and len(files) > MAX_CHAT_FILES:
+        raise HTTPException(413, f"Не больше {MAX_CHAT_FILES} файлов")
+    parts = [("files", (f.filename or "файл", f.file.read(), f.content_type or "application/octet-stream"))
+             for f in files or []]
+    data = _core_call("POST", "/escalations", data={"payload": payload}, files=parts or None)
+    _log("escalations", {"id": data.get("id"), "filename": data.get("filename"), "size": data.get("size"),
+                         "raw_attachments": data.get("raw_attachments")})
+    return data
+
+
+@app.get("/api/escalations/{package_id}")
+def escalations_get(package_id: str) -> Response:
+    """Скачать архив пакета (zip) — имя файла от ядра."""
+    try:
+        r = httpx.get(f"{CORE_URL}/escalations/{package_id}", timeout=CORE_TIMEOUT)
+    except httpx.HTTPError as exc:
+        raise HTTPException(503, f"Ядро недоступно ({CORE_URL})") from exc
+    if r.status_code != 200:
+        detail = "Пакет не найден" if r.status_code == 404 else f"Ошибка ядра: HTTP {r.status_code}"
+        raise HTTPException(r.status_code, detail)
+    headers = {k: r.headers[k] for k in ("content-disposition",) if k in r.headers}
+    return Response(r.content, media_type="application/zip", headers=headers)
+
+
 @app.post("/api/feedback")
 def feedback(req: FeedbackRequest) -> dict:
     _log("feedback", req.model_dump())

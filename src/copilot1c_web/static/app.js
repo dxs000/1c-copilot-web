@@ -233,13 +233,82 @@ function renderAnswer(holder, question, data, files = []) {
   holder.after(wrap);
   const fb = feedbackRow(question, data.answer || "");
   wrap.after(fb);
+  let last = fb;
+  // «Передать в Claude…» — у каждого ответа; если агент сам рекомендовал эксперта — панель открыта сразу
+  const expert = el("button", { type: "button" }, "Передать в Claude…");
+  fb.insertBefore(expert, fb.lastChild);
+  const openExpert = () => {
+    if (fb.nextElementSibling?.classList.contains("expert-panel")) return;
+    const panel = expertPanel(question, data, files);
+    fb.after(panel);
+    expert.disabled = true;
+    scrollToEnd(panel);
+  };
+  expert.addEventListener("click", openExpert);
+  if (data.escalation) openExpert();
   if (data.issue_draft) {
     const card = issueCard(question, data, files);
-    fb.after(card);
+    (fb.nextElementSibling?.classList.contains("expert-panel") ? fb.nextElementSibling : last).after(card);
+    last = card;
     scrollToEnd(card);
-  } else {
+  } else if (!data.escalation) {
     scrollToEnd(wrap);
   }
+}
+
+// ---------- эксперт через оператора: пакет для Claude ----------
+
+function expertPanel(question, data, files = []) {
+  const rec = data.escalation;
+  const panel = el("section", { class: "expert-panel" + (rec ? " recommended" : ""), "aria-label": "Пакет для эксперта" });
+  panel.append(el("div", { class: "issue-card-head" },
+    el("strong", {}, rec ? "Агент рекомендует передать вопрос эксперту (Claude)" : "Передать вопрос эксперту (Claude)"),
+    el("span", { class: "mat-sub" }, "архив с промтом и материалами — передаёт оператор")));
+  const reason = el("textarea", { rows: "2", placeholder: "Почему нужен эксперт (необязательно)" });
+  reason.value = rec?.reason || "";
+  const ask = el("textarea", { rows: "3" });
+  ask.value = rec?.expert_question || question;
+  const raw = el("input", { type: "checkbox" });
+  const fields = el("div", { class: "issue-card-fields" },
+    el("label", { class: "fld wide" }, el("span", {}, "Вопрос эксперту"), ask),
+    el("label", { class: "fld wide" }, el("span", {}, "Почему не справились сами"), reason),
+    files.length ? el("label", { class: "fld wide check" }, raw,
+      el("span", {}, `Приложить исходные файлы (${files.map((f) => f.name).join(", ")}) — в письмах есть имена и адреса; `
+        + "без отметки в пакет идёт только их очищенный текст")) : null);
+  const note = el("span", { class: "issue-card-note", "aria-live": "polite" });
+  const result = el("div", { class: "expert-result", hidden: "" });
+  const build = el("button", { type: "button", class: "btn small primary", onclick: async () => {
+    build.disabled = true;
+    note.textContent = "собираю пакет…";
+    const payload = {
+      question, expert_question: ask.value.trim(), reason: reason.value.trim(), answer: data.answer || "",
+      sources: (data.sources || []).map((x) => ({ n: x.n, label: x.label, text: x.text })),
+      web_sources: data.web_sources || [], tools: data.tools || [], include_raw: raw.checked,
+    };
+    const body = new FormData();
+    body.append("payload", JSON.stringify(payload));
+    files.forEach((f) => body.append("files", f, f.name));
+    try {
+      const r = await fetch("/api/escalations", { method: "POST", body });
+      const pkg = await r.json();
+      if (!r.ok) throw new Error(typeof pkg.detail === "string" ? pkg.detail : `HTTP ${r.status}`);
+      note.textContent = "";
+      result.replaceChildren(
+        el("a", { class: "btn small primary", href: `/api/escalations/${pkg.id}`, download: pkg.filename },
+          `Скачать «${pkg.filename}» (${fmtSize(pkg.size)})`),
+        el("ul", { class: "expert-files" }, ...pkg.files.map((f) => el("li", {}, el("code", {}, f.path), ` — ${f.what}`))),
+        el("p", { class: "mat-sub" }, "Передайте архив в Claude целиком: PROMPT.md — задача, остальное — материалы. "
+          + "Имена, e-mail и телефоны в текстах пакета заменены."));
+      result.hidden = false;
+      build.textContent = "Собрать заново";
+    } catch (e) {
+      note.textContent = `Пакет не собран: ${e.message}`;
+    } finally {
+      build.disabled = false;
+    }
+  } }, "Собрать пакет");
+  panel.append(fields, el("div", { class: "issue-card-actions" }, build, note), result);
+  return panel;
 }
 
 // ---------- сообщение о проблеме: карточка обращения прямо в чате ----------

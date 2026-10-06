@@ -809,6 +809,28 @@ async function kbPublish() {
   }
 }
 
+// ---------- пакет для эксперта (Claude) по обращению ----------
+
+async function expertPackage() {
+  if (!ISS.issue) { notice("Сначала сохраните обращение — пакет собирается по сохранённой карточке.", "warn"); return; }
+  if (Object.keys(changes()).length) { notice("Сначала сохраните изменения обращения.", "warn"); return; }
+  const ask = prompt("Вопрос эксперту (Claude): что нужно выяснить по этому обращению?",
+    "Найди причину и предложи решение; если нужна доработка — расширением с префиксом КС_.");
+  if (ask === null) return;
+  setText("ip-saved", "собираю пакет…");
+  try {
+    const body = new FormData();
+    body.append("payload", JSON.stringify({ issue_id: ISS.issue.id, expert_question: ask.trim() }));
+    const pkg = await api("/api/escalations", { method: "POST", body });
+    setText("ip-saved", "");
+    notice(`Пакет собран: ${plural(pkg.files.length, "файл", "файла", "файлов")}, ${fmtSize(pkg.size)} — карточка, связи, вложения (текстом), без имён и контактов.`,
+      "info", { label: "Скачать архив", onclick: () => { location.href = `/api/escalations/${pkg.id}`; } });
+  } catch (e) {
+    setText("ip-saved", "");
+    notice(`Пакет не собран: ${e.message}`, "bad");
+  }
+}
+
 // ---------- запуск ----------
 
 async function initIssues() {
@@ -830,6 +852,7 @@ async function initIssues() {
   $("new-issue").addEventListener("click", newIssue);
   $("ip-related-find").addEventListener("click", loadRelated);
   $("ip-kb-draft").addEventListener("click", kbDraft);
+  $("ip-expert").addEventListener("click", expertPackage);
   $("kb-regen").addEventListener("click", kbDraft);
   $("kb-publish").addEventListener("click", kbPublish);
   $("kb-cancel").addEventListener("click", () => { $("ip-kb-editor").hidden = true; setText("kb-note", ""); });
