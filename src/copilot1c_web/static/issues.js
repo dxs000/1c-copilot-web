@@ -11,12 +11,14 @@ const ISS = {
   contacts: new Map(),     // подпись в списке подсказок → контакт
   pendingFiles: [],        // файлы, выбранные до создания нового обращения
   extra: {},               // поля без элементов формы: Message-ID и имя файла письма-источника
+  contours: [],            // справочник контуров: системы и их блоки (подсистемы)
+  byId: {},
   listTimer: null,
 };
 
 // Поля формы по видам: так форма читается и заполняется одинаково для любого обращения
 const TEXT = ["title", "assignee", "description", "error_text", "steps", "expected", "actual", "infobase", "server",
-  "config_version", "platform_version", "root_cause", "resolution"];
+  "config_version", "platform_version", "root_cause", "resolution", "transferred_to"];
 const SELECT = ["status", "priority", "category", "source"];
 const LISTS = ["tags", "objects", "test_case_ids", "requirement_ids"];
 const FIELD_LABEL = {
@@ -27,6 +29,7 @@ const FIELD_LABEL = {
   initiator_contact_id: "Инициатор", reported_at: "Когда сообщил", registered_by: "Кто завёл", source: "Источник",
   source_ref: "Ссылка на источник", duplicate_of: "Дубль обращения", requirement_ids: "Пункты ТЗ",
   test_case_ids: "Тест-кейсы ПиМИ", root_cause: "Причина", resolution: "Решение",
+  contours: "Система", transferred_to: "Передано",
 };
 const LONG = new Set(["description", "error_text", "steps", "expected", "actual", "root_cause", "resolution", "summary"]);
 const OPEN = () => new Set(ISS.meta?.open_statuses || []);
@@ -92,9 +95,115 @@ async function loadMeta() {
   options($("f-category"), ISS.meta.categories, 1);
   options($("f-assignee"), ISS.meta.analysts.map((a) => ({ value: a, label: a })), 1);
   options(field("status"), ISS.meta.statuses);
+  await loadContours();
   options(field("priority"), ISS.meta.priorities);
   options(field("category"), ISS.meta.categories);
   options(field("source"), ISS.meta.sources);
+}
+
+// ---------- система и подсистема (справочник контуров) ----------
+
+async function loadContours() {
+  try {
+    ISS.contours = (await api("/api/contours")).contours || [];
+  } catch (e) {
+    ISS.contours = [];
+  }
+  ISS.byId = Object.fromEntries(ISS.contours.map((c) => [c.id, c]));
+  const systems = ISS.contours.filter((c) => !c.parent_id && c.kind !== "subsystem");
+  const keep = $("f-contour").value;
+  $("f-contour").replaceChildren(el("option", { value: "" }, "Любая система"),
+    ...systems.flatMap((sy) => [el("option", { value: String(sy.id) }, sy.name),
+      ...ISS.contours.filter((c) => c.parent_id === sy.id).map((c) => el("option", { value: String(c.id) }, `\u2003${c.name}`))]));
+  $("f-contour").value = keep;
+  $("ip-sys").replaceChildren(el("option", { value: "" }, "— не определена —"),
+    ...systems.map((sy) => el("option", { value: String(sy.id) }, sy.name)));
+  fillSubsystems();
+}
+
+function fillSubsystems(selected = "") {
+  const sys = Number($("ip-sys").value) || null;
+  const subs = sys ? ISS.contours.filter((c) => c.parent_id === sys) : [];
+  $("ip-sub").replaceChildren(el("option", { value: "" }, sys ? "— без блока —" : "— выберите систему —"),
+    ...subs.map((c) => el("option", { value: String(c.id) }, c.name)),
+    ...(sys ? [el("option", { value: "+new" }, "+ новый блок…")] : []));
+  $("ip-sub").value = subs.some((c) => String(c.id) === String(selected)) ? String(selected) : "";
+}
+
+function contourLabel(ids) {
+  const items = (ids || []).map((id) => ISS.byId[id]).filter(Boolean);
+  const parents = new Set(items.map((c) => c.parent_id));
+  return items.filter((c) => !parents.has(c.id))
+    .map((c) => (c.parent_id && ISS.byId[c.parent_id] ? `${ISS.byId[c.parent_id].name} › ${c.name}` : c.name)).join("; ");
+}
+
+function setContours(ids) {
+  const items = (ids || []).map((id) => ISS.byId[id]).filter(Boolean);
+  const sub = items.find((c) => c.parent_id);
+  const sys = sub ? ISS.byId[sub.parent_id] : items.find((c) => !c.parent_id);
+  $("ip-sys").value = sys ? String(sys.id) : "";
+  fillSubsystems(sub ? sub.id : "");
+}
+
+function readContours() {
+  const sys = Number($("ip-sys").value) || null;
+  const sub = Number($("ip-sub").value) || null;
+  return [sys, sub].filter(Boolean);
+}
+
+async function newSubsystem() {
+  const sys = Number($("ip-sys").value);
+  const name = (prompt(`Новый блок системы «${ISS.byId[sys]?.name}»:`) || "").trim();
+  if (!name) { fillSubsystems(); return; }
+  try {
+    const c = await api("/api/contours", json("POST", { kind: "subsystem", name, parent_id: sys }));
+    await loadContours();
+    $("ip-sys").value = String(sys);
+    fillSubsystems(c.id);
+  } catch (e) {
+    notice(`Блок не добавлен: ${e.message}`, "bad");
+    fillSubsystems();
+  }
+}
+
+let suggestSeq = 0;
+async function suggestContours(force = false) {
+  const box = $("ip-sys-suggest");
+  if (!force && readContours().length) { box.hidden = true; return; }
+  const v = readForm();
+  if (!(v.title || v.description || v.error_text)) { box.hidden = true; return; }
+  const seq = ++suggestSeq;
+  let r;
+  try {
+    r = await api("/api/issues/suggest-contours", json("POST", { title: v.title, description: v.description,
+      error_text: v.error_text, objects: v.objects }));
+  } catch (e) { return; }
+  if (seq !== suggestSeq) return;
+  const parts = [];
+  if (r.contours?.length && JSON.stringify(r.contours) !== JSON.stringify(readContours())) {
+    const why = Object.values(r.why || {}).flat().slice(0, 3).join("; ");
+    parts.push(el("span", {}, "Предлагается: ", el("b", {}, r.labels.at(-1)), why ? el("span", { class: "mat-sub" }, ` — ${why}`) : null),
+      el("button", { type: "button", class: "btn small", onclick: () => { setContours(r.contours); box.hidden = true; } }, "Принять"));
+  } else if (r.new) {
+    parts.push(el("span", {}, "В справочнике нет подходящего — новый пункт: ", el("b", {}, r.new.label)),
+      el("button", { type: "button", class: "btn small", onclick: async () => {
+        try {
+          const c = await api("/api/contours", json("POST", { kind: r.new.kind, name: r.new.name, parent_id: r.new.parent_id }));
+          await loadContours();
+          setContours(r.new.parent_id ? [r.new.parent_id, c.id] : [c.id]);
+          box.hidden = true;
+        } catch (e) { notice(`Не добавлено: ${e.message}`, "bad"); }
+      } }, "Добавить и выбрать"));
+  } else if (!readContours().length && r.candidates?.length) {
+    parts.push(el("span", { class: "mat-sub" }, "Похоже на: " + r.candidates.slice(0, 3).map((c) => c.label).join(", ")
+      + " — выберите систему вручную"));
+  }
+  box.replaceChildren(...parts);
+  box.hidden = !parts.length;
+}
+
+function syncTransfer() {
+  $("ip-transfer-wrap").hidden = field("status").value !== "transferred";
 }
 
 // ---------- список ----------
@@ -106,13 +215,15 @@ function priorityClass(p) {
 function statusClass(s) {
   if (s === "new") return "st active-static";
   if (s === "resolved" || s === "closed") return "st done";
-  if (s === "rejected" || s === "duplicate") return "st";
+  if (s === "rejected" || s === "duplicate" || s === "transferred") return "st";
   return "st progress";
 }
 
 function issueRow(x) {
   const open = el("button", { type: "button", class: "link-btn", onclick: () => openIssue(x.id) }, x.title);
-  const sub = [x.initiator_name && `инициатор: ${x.initiator_name}${x.initiator_org ? ` (${x.initiator_org})` : ""}`,
+  const sys = contourLabel(x.contours);
+  const sub = [sys, x.status === "transferred" && x.transferred_to ? `передано: ${x.transferred_to}` : "",
+    x.initiator_name && `инициатор: ${x.initiator_name}${x.initiator_org ? ` (${x.initiator_org})` : ""}`,
     x.objects?.length ? x.objects.join(", ") : ""].filter(Boolean).join(" · ");
   const tr = el("tr", { class: "clickable" },
     el("td", { class: "mono" }, x.number),
@@ -133,7 +244,8 @@ async function loadIssues() {
   const st = $("f-status").value;
   if (st === "open") params.set("open", "true");
   else if (st) params.set("status", st);
-  for (const [id, key] of [["f-priority", "priority"], ["f-category", "category"], ["f-assignee", "assignee"], ["f-q", "q"]]) {
+  for (const [id, key] of [["f-priority", "priority"], ["f-category", "category"], ["f-assignee", "assignee"], ["f-q", "q"],
+    ["f-contour", "contour"]]) {
     const v = $(id).value.trim();
     if (v) params.set(key, v);
   }
@@ -183,6 +295,7 @@ function readForm() {
   v.initiator_contact_id = ISS.contactId;
   v.source_message_id = ISS.extra.source_message_id ?? null;
   v.source_ref = ISS.extra.source_ref ?? null;
+  v.contours = readContours();
   return v;
 }
 
@@ -193,6 +306,8 @@ function fillForm(v) {
   field("due_date").value = v.due_date || "";
   field("reported_at").value = toLocalInput(v.reported_at);
   field("duplicate_of").value = v.duplicate_of ?? "";
+  setContours(v.contours || []);
+  syncTransfer();
 }
 
 // Сравнение в одной форме записи: даты — как моменты времени, остальное — как JSON
@@ -293,9 +408,11 @@ function renderAttachments(issue) {
 function fmtValue(k, v) {
   if (v === null || v === undefined || v === "" || (Array.isArray(v) && !v.length)) return "—";
   if (ISS.labels[k]) return ISS.labels[k][v] || v;
+  if (k === "contours") return contourLabel(v) || v.join(", ");
   if (Array.isArray(v)) return v.join(", ");
   if (k === "reported_at") return fmtTime(v);
   if (k === "duplicate_of") return `ОБР-${String(v).padStart(4, "0")}`;
+  if (k === "contours") return contourLabel(v) || v.join(", ");
   if (k === "initiator_contact_id") return `контакт № ${v}`;
   const s = String(v);
   return s.length > 120 ? s.slice(0, 117) + "…" : s;
@@ -345,6 +462,9 @@ function render(issue) {
     st.textContent = issue.status_label;
     st.hidden = false;
     fillForm(issue);
+    const sysLabel = contourLabel(issue.contours);
+    $("ip-system").hidden = !sysLabel;
+    $("ip-system").textContent = sysLabel;
     showContact(issue.initiator);
     $("ip-files-hint").textContent = "или перетащите сюда скриншоты, логи, письма";
   } else {
@@ -352,6 +472,7 @@ function render(issue) {
     $("ip-status").hidden = true;
     form().reset();
     fillForm({ status: "new", priority: "medium", category: "bug", source: "manual" });
+    $("ip-system").hidden = true;
     showContact(null);
     $("ip-files-hint").textContent = "файлы прикрепятся, когда обращение будет сохранено";
   }
@@ -359,6 +480,8 @@ function render(issue) {
   renderAttachments(issue);
   renderHistory(issue);
   renderKb(issue);
+  $("ip-sys-suggest").hidden = true;
+  if (issue && !(issue.contours || []).length) suggestContours();
   if (issue) loadRelated();
   else $("ip-related").replaceChildren(el("p", { class: "hint" },
     "Заполните тему или описание и нажмите «Найти по текущим полям» — система подскажет похожие обращения, тест-кейсы ПиМИ и пункты ТЗ."));
@@ -611,6 +734,7 @@ async function fromEmail(file) {
     $("nc-org").value = ini.organization || "";
   }
   renderChain(p);
+  suggestContours();  // система и подсистема — по теме и тексту письма
 
   if (ISS.issue) {
     try {
@@ -644,6 +768,7 @@ function openDraftFromChat() {
   if (!d) { notice("Черновик из чата не найден — заполните обращение вручную.", "warn"); return; }
   fillForm({ status: "new", source: "chat", ...d });
   ISS.extra = { source_ref: d.source_ref || null, source_message_id: d.source_message_id || null };
+  if (!(d.contours || []).length) suggestContours();
   if (d.contact?.id) showContact(d.contact);
   const files = d.files?.length ? ` Файлы из чата (${d.files.join(", ")}) прикрепите в блоке «Вложения».` : "";
   notice(`Черновик из чата: проверьте поля и сохраните.${files}`, "info");
@@ -846,7 +971,11 @@ async function initIssues() {
 
   let qTimer = null;
   $("f-q").addEventListener("input", () => { clearTimeout(qTimer); qTimer = setTimeout(loadIssues, 300); });
-  ["f-status", "f-priority", "f-category", "f-assignee"].forEach((id) => $(id).addEventListener("change", loadIssues));
+  ["f-status", "f-priority", "f-category", "f-assignee", "f-contour"].forEach((id) => $(id).addEventListener("change", loadIssues));
+  $("ip-sys").addEventListener("change", () => { fillSubsystems(); $("ip-sys-suggest").hidden = true; });
+  $("ip-sub").addEventListener("change", () => { if ($("ip-sub").value === "+new") newSubsystem(); });
+  field("status").addEventListener("change", syncTransfer);
+  ["title", "description", "error_text"].forEach((k) => field(k).addEventListener("change", () => suggestContours()));
   $("filters").addEventListener("submit", (e) => { e.preventDefault(); loadIssues(); });
 
   $("new-issue").addEventListener("click", newIssue);

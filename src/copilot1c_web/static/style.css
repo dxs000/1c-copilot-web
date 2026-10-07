@@ -403,3 +403,16 @@ body.drawer-open { overflow: hidden; }
 .issue-why.wide, .intake-fields > .mat-sub { grid-column: 1 / -1; }
 .triage-card .issue-why ul { margin: 6px 0 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; }
 .fld[hidden], .intake-fields [hidden] { display: none; }
+
+/* система и подсистема обращения */
+.sys-chip { display: inline-flex; align-items: center; padding: 2px 10px; border-radius: 12px; font-size: 13px;
+  background: var(--surface-2); border: 1px solid var(--line); color: var(--ink); white-space: nowrap; max-width: 60%;
+  overflow: hidden; text-overflow: ellipsis; }
+.sys-chip[hidden] { display: none; }
+.sys-suggest { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 10px;
+  background: var(--accent-tint); color: var(--accent-ink); font-size: 14px; }
+.sys-suggest[hidden] { display: none; }
+.fld.check { flex-direction: row; align-items: center; gap: 8px; color: var(--ink); }
+.fld.check input { width: 16px; height: 16px; accent-color: var(--accent); }
+.sys-suggest > span:first-child { flex: 1 1 320px; }
+.sys-suggest .mat-sub { display: inline; }

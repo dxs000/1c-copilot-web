@@ -394,8 +394,24 @@ function issueCard(question, data, files = []) {
   const who = initiator ? el("div", { class: "fld wide" }, el("span", {}, "Инициатор — из письма"),
     el("div", {}, [initiator.name, initiator.email, initiator.position].filter(Boolean).join(" · "),
       el("span", { class: "mat-sub" }, contact ? " — уже есть в контактах" : " — будет добавлен в контакты"))) : null;
+  // система и подсистема: предложение ядра (из разбора письма или по тексту), аналитик может снять отметку
+  const sys = { ids: d.contours || [], box: el("input", { type: "checkbox" }) };
+  sys.box.checked = true;
+  const sysLabel = el("span", {}, "определяю…");
+  const sysRow = el("label", { class: "fld wide check" }, sys.box, el("span", {}, "Система: ", sysLabel));
+  const applySuggestion = (r) => {
+    sys.ids = r?.contours || [];
+    sysLabel.textContent = sys.ids.length ? r.labels.at(-1) : r?.new ? `новый пункт «${r.new.label}» — заведите на вкладке «Обращения»`
+      : "не определена — укажите в карточке обращения";
+    sys.box.disabled = !sys.ids.length;
+    sys.box.checked = !!sys.ids.length;
+  };
+  if (d.contours_suggestion) applySuggestion(d.contours_suggestion);
+  else fetch("/api/issues/suggest-contours", { method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ title: d.title, description: d.description, error_text: d.error_text, objects: d.objects || [] }) })
+    .then((r) => (r.ok ? r.json() : null)).then(applySuggestion).catch(() => applySuggestion(null));
   const fields = el("div", { class: "issue-card-fields" }, who,
-    el("label", { class: "fld wide" }, el("span", {}, "Тема"), title),
+    el("label", { class: "fld wide" }, el("span", {}, "Тема"), title), sysRow,
     el("label", { class: "fld" }, el("span", {}, "Категория"), category),
     el("label", { class: "fld" }, el("span", {}, "Приоритет"), priority),
     el("label", { class: "fld wide" }, el("span", {}, "Объекты"), objects),
@@ -403,7 +419,9 @@ function issueCard(question, data, files = []) {
       el("pre", { class: "issue-error mono" }, d.error_text)) : null);
 
   const draft = () => ({
-    ...d, title: title.value.trim(), category: category.value || d.category, priority: priority.value || d.priority,
+    ...Object.fromEntries(Object.entries(d).filter(([k]) => k !== "contours_suggestion")),
+    ...(sys.box.checked && sys.ids.length ? { contours: sys.ids } : {}),
+    title: title.value.trim(), category: category.value || d.category, priority: priority.value || d.priority,
     objects: objects.value.split(/[,;\n]/).map((x) => x.trim()).filter(Boolean),
     source_ref: d.source_ref || `чат, ${new Date().toLocaleString("ru-RU")}`,
   });
@@ -763,7 +781,11 @@ function triageCard(email, question, data, file, statuses) {
 
   // --- новое обращение: черновик из письма (инициатор, дата, тема) и обычная карточка обращения ---
   const newPanel = async () => {
-    if (data.issue_draft) { panel.replaceChildren(issueCard(question, data, [file])); return; }
+    if (data.issue_draft) {
+      panel.replaceChildren(issueCard(question, { ...data, issue_draft: { ...data.issue_draft,
+        contours_suggestion: email.contours || null } }, [file]));
+      return;
+    }
     panel.replaceChildren(el("p", { class: "mat-sub" }, "готовлю черновик обращения из письма…"));
     try {
       const body = new FormData();
@@ -772,7 +794,7 @@ function triageCard(email, question, data, file, statuses) {
       const p = await r.json();
       if (!r.ok) throw new Error(typeof p.detail === "string" ? p.detail : `HTTP ${r.status}`);
       const draft = { ...Object.fromEntries(Object.entries(p.draft).filter(([, v]) => v)), initiator: p.initiator,
-        contact: p.contact, already_registered: p.already_registered };
+        contact: p.contact, already_registered: p.already_registered, contours_suggestion: email.contours || null };
       panel.replaceChildren(issueCard(question, { ...data, issue_draft: draft }, [file]));
     } catch (e) {
       panel.replaceChildren(el("p", { class: "mat-sub" }, `Черновик не собран: ${e.message}`));

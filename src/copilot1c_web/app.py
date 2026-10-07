@@ -389,6 +389,12 @@ def issues_from_email(file: Annotated[UploadFile, File()]) -> dict:
     return _core_call("POST", "/issues/from-email", files=[part])
 
 
+@app.post("/api/issues/suggest-contours")
+def issues_suggest_contours(body: Annotated[dict, Body()]) -> dict:
+    """Система и подсистема для обращения (ядро: POST /issues/suggest-contours)."""
+    return _core_call("POST", "/issues/suggest-contours", json=body)
+
+
 @app.post("/api/issues/triage")
 def issues_triage(files: Annotated[list[UploadFile], File()], question: Annotated[str, Form()] = "") -> dict:
     """Письмо по обращениям: обновить существующее, новое или только в базу (ядро: POST /issues/triage)."""

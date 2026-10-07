@@ -423,3 +423,12 @@ def test_issues_triage_proxy(monkeypatch, tmp_path):
     assert calls[-1]["url"].endswith("/issues/triage") and calls[-1]["data"] == {"question": "обнови обращение"}
     ok = {"question": "обнови", "verdict": "issue_updated", "intent": {"primary": "issue_mail"}, "issue_id": 9}
     assert c.post("/api/intent-feedback", json=ok).status_code == 200
+
+
+def test_suggest_contours_proxy(monkeypatch, tmp_path):
+    c = _client(monkeypatch, tmp_path)
+    calls = _core_request(monkeypatch, 200, {"contours": [1, 2], "labels": ["Инфраструктура › Терминальные серверы"]})
+    r = c.post("/api/issues/suggest-contours", json={"title": "висит служба терминалов"})
+    assert r.json()["contours"] == [1, 2] and calls[-1]["json"] == {"title": "висит служба терминалов"}
+    c.get("/api/issues", params={"contour": "1", "open": "true"})
+    assert calls[-1]["url"].endswith("/issues") and calls[-1]["params"]["contour"] == "1"

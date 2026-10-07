@@ -40,6 +40,7 @@
     <select id="f-priority" aria-label="Приоритет"><option value="">Любой приоритет</option></select>
     <select id="f-category" aria-label="Категория"><option value="">Любая категория</option></select>
     <select id="f-assignee" aria-label="Ответственный"><option value="">Любой ответственный</option></select>
+    <select id="f-contour" aria-label="Система"><option value="">Любая система</option></select>
   </form>
 
   <section class="card">
@@ -53,6 +54,7 @@
   <div class="ip-head">
     <span class="ip-number mono" id="ip-number"></span>
     <span class="st" id="ip-status"></span>
+    <span class="sys-chip" id="ip-system" hidden></span>
     <button class="icon-btn" type="button" id="ip-close" aria-label="Закрыть карточку">✕</button>
   </div>
   <form class="ip-body" id="issue-form" novalidate>
@@ -66,6 +68,11 @@
       <label class="fld"><span>Ответственный</span><input name="assignee" list="analysts" type="text"></label>
       <label class="fld"><span>Срок</span><input name="due_date" type="date"></label>
       <label class="fld"><span>Теги</span><input name="tags" type="text" placeholder="через запятую"></label>
+      <label class="fld"><span>Система</span><select name="system" id="ip-sys"></select></label>
+      <label class="fld"><span>Блок (подсистема)</span><select name="subsystem" id="ip-sub"></select></label>
+      <label class="fld" id="ip-transfer-wrap" hidden><span>Кому передано</span>
+        <input name="transferred_to" type="text" list="transfer-targets" placeholder="например, системные администраторы"></label>
+      <div class="fld wide sys-suggest" id="ip-sys-suggest" hidden></div>
     </fieldset>
 
     <fieldset class="fs-2"><legend>Суть проблемы</legend>
@@ -169,6 +176,8 @@
   </div>
 </aside>
 <datalist id="analysts"></datalist>
+<datalist id="transfer-targets"><option value="Системные администраторы"><option value="Служба поддержки пользователей">
+  <option value="Разработчик (интегратор)"><option value="Владелец бизнес-процесса"></datalist>
 <datalist id="contacts"></datalist>
 
 <script src="/static/app.js"></script>
