@@ -418,7 +418,27 @@ function fmtValue(k, v) {
   return s.length > 120 ? s.slice(0, 117) + "…" : s;
 }
 
+function letterLine(e) {
+  // письмо переписки — отдельный пункт истории: кто, когда отправил (не когда загрузили), текст без цитат
+  const v = e.new_value || {};
+  const text = (e.comment || "").replace(/\n{3,}/g, "\n\n");
+  const compact = text.replace(/\n\s*\n/g, "\n");
+  const short = compact.length > 400 ? compact.slice(0, 397) + "…" : compact;
+  const body = el("div", { class: "ev-letter-text" }, short);
+  const more = compact.length > 400 ? el("button", { type: "button", class: "link-btn accent", onclick: () => {
+    const open = body.textContent === short;
+    body.textContent = open ? text : short;
+    more.textContent = open ? "Свернуть" : "Показать письмо целиком";
+  } }, "Показать письмо целиком") : null;
+  return el("li", { class: "ev ev-letter" + (v.role === "уведомление" ? " ev-notify" : "") },
+    el("div", { class: "ev-head" }, "✉ ", el("b", {}, e.actor || "?"),
+      v.role ? el("span", { class: "ev-role" }, ` · ${v.role}`) : null, " ",
+      el("time", { datetime: e.at }, fmtTime(e.at)), v.origin === "quoted" ? el("span", { class: "mat-sub" }, " из цитаты") : null),
+    body, more);
+}
+
 function eventLine(e) {
+  if (e.type === "letter") return letterLine(e);
   const who = el("b", {}, e.actor || "—");
   const when = el("time", { datetime: e.at }, fmtTime(e.at));
   let what;

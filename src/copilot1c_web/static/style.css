@@ -416,3 +416,9 @@ body.drawer-open { overflow: hidden; }
 .fld.check input { width: 16px; height: 16px; accent-color: var(--accent); }
 .sys-suggest > span:first-child { flex: 1 1 320px; }
 .sys-suggest .mat-sub { display: inline; }
+
+/* письма в истории обращения */
+.ev-letter { border-left: 3px solid var(--accent); padding-left: 10px; }
+.ev-letter.ev-notify { border-left-color: var(--line); opacity: 0.85; }
+.ev-letter-text { white-space: pre-wrap; font-size: 14px; margin-top: 2px; }
+.ev-role { color: var(--muted); font-size: 13px; }
