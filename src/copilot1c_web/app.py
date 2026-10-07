@@ -198,7 +198,7 @@ def feedback(req: FeedbackRequest) -> dict:
 
 class IntentFeedback(BaseModel):
     question: str = Field(max_length=20000)
-    verdict: str = Field(pattern="^(registered|edit|not_issue)$")
+    verdict: str = Field(pattern="^(registered|edit|not_issue|issue_updated)$")
     intent: dict = Field(default_factory=dict)
     issue_id: int | None = None
 
@@ -387,6 +387,12 @@ def issues_from_email(file: Annotated[UploadFile, File()]) -> dict:
     """Письмо .msg/.eml → черновик обращения от ядра (инициатор, тема, текст, цепочка). Ничего не сохраняет."""
     part = ("file", (file.filename or "письмо", file.file.read(), file.content_type or "application/octet-stream"))
     return _core_call("POST", "/issues/from-email", files=[part])
+
+
+@app.post("/api/issues/triage")
+def issues_triage(files: Annotated[list[UploadFile], File()], question: Annotated[str, Form()] = "") -> dict:
+    """Письмо по обращениям: обновить существующее, новое или только в базу (ядро: POST /issues/triage)."""
+    return _core_call("POST", "/issues/triage", files=_parts(files), data={"question": question})
 
 
 @app.post("/api/issues/{issue_id}/attachments")

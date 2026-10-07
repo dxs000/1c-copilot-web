@@ -388,3 +388,18 @@ body.drawer-open { overflow: hidden; }
 .intake-add input { width: 160px; }
 .intake-card .issue-card-actions strong { color: var(--ok); }
 @media (max-width: 640px) { .intake-add input { width: 120px; } }
+
+/* письмо по обращениям */
+.triage-choice { display: flex; flex-direction: column; gap: 6px; }
+.triage-opt { display: flex; align-items: flex-start; gap: 8px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px;
+  cursor: pointer; background: var(--surface-2); }
+.triage-opt:has(input:checked) { border-color: var(--accent); background: var(--accent-tint); }
+.triage-opt input { margin-top: 4px; accent-color: var(--accent); }
+.triage-opt span { display: flex; flex-direction: column; }
+.triage-opt small { color: var(--muted); font-size: 13px; }
+.triage-panel { display: flex; flex-direction: column; gap: 10px; }
+.triage-panel .intake-card, .triage-panel .issue-card { margin: 0; }
+.triage-panel textarea { padding: 8px 10px; border: 1px solid #B9BFB5; border-radius: 8px; font: inherit; width: 100%; }
+.issue-why.wide, .intake-fields > .mat-sub { grid-column: 1 / -1; }
+.triage-card .issue-why ul { margin: 6px 0 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; }
+.fld[hidden], .intake-fields [hidden] { display: none; }

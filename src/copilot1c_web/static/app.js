@@ -252,7 +252,8 @@ function renderAnswer(holder, question, data, files = []) {
   };
   expert.addEventListener("click", openExpert);
   if (data.escalation) openExpert();
-  if (data.issue_draft) {
+  const triaged = (data.triage?.emails || []).filter((e) => files.some((f) => f.name === e.filename));
+  if (data.issue_draft && !(triaged.length && !data.issue_draft.already_registered)) {
     const card = issueCard(question, data, files);
     (fb.nextElementSibling?.classList.contains("expert-panel") ? fb.nextElementSibling : last).after(card);
     last = card;
@@ -260,7 +261,14 @@ function renderAnswer(holder, question, data, files = []) {
   } else if (!data.escalation && !data.intake) {
     scrollToEnd(wrap);
   }
-  if (data.intake?.items?.length) {  // «просмотри и добавь в базу» — карточка разбора сразу
+  if (triaged.length) {  // письмо по обращениям: обновить существующее / новое / только в базу
+    triaged.forEach((email) => {
+      const card = triageCard(email, question, data, files.find((f) => f.name === email.filename), data.triage.statuses);
+      last.after(card);
+      last = card;
+    });
+    scrollToEnd(last);
+  } else if (data.intake?.items?.length) {  // «просмотри и добавь в базу» — карточка разбора сразу
     const card = intakeCard(data.intake, files);
     last.after(card);
     last = card;
@@ -646,6 +654,148 @@ function intakeCard(analysis, files, onDone) {
   } }, "Принять");
   const actionsBox = el("div", { class: "issue-card-actions" }, accept, note);
   card.append(actionsBox);
+  return card;
+}
+
+// ---------- письмо по обращениям: обновить существующее, зарегистрировать новое или только в базу ----------
+
+function triageCard(email, question, data, file, statuses) {
+  const card = el("section", { class: "intake-card triage-card", "aria-label": "Письмо и обращения" });
+  const rep = email.letters || {};
+  const threads = (rep.threads || []).map((t) => `ветка «${t.title}»${t.id ? "" : " (новая)"}`).join(", ");
+  card.append(el("div", { class: "issue-card-head" },
+    el("strong", {}, `Письмо «${email.filename}»`),
+    el("span", { class: "mat-sub" }, `новых писем: ${rep.letters_new ?? 0}, уже известных: ${rep.letters_known ?? 0}`
+      + (threads ? ` · ${threads}` : ""))));
+  if (email.error) { card.append(el("p", { class: "mat-sub" }, email.error)); return card; }
+
+  const cands = email.candidates || [];
+  const choice = el("div", { class: "triage-choice", role: "radiogroup", "aria-label": "Что сделать с письмом" });
+  const panel = el("div", { class: "triage-panel" });
+  const radios = {};
+  const option = (value, label, sub) => {
+    const r = el("input", { type: "radio", name: `triage-${Math.random().toString(36).slice(2)}`, value });
+    radios[value] = r;
+    r.addEventListener("change", () => show(value));
+    choice.append(el("label", { class: "triage-opt" }, r, el("span", {}, el("strong", {}, label), sub ? el("small", {}, sub) : null)));
+  };
+  if (cands.length) option("update", `Обновить ${cands[0].number}`, `«${cands[0].title}» · ${cands[0].status_label}`);
+  option("new", "Зарегистрировать новое обращение", cands.length && email.decision !== "update" ? `возможно, это ${cands[0].number}` : "");
+  option("knowledge", "Не обращение — только в базу знаний", "");
+  card.append(choice, panel);
+
+  // --- обновление существующего ---
+  const updatePanel = () => {
+    const u = email.update || { what_changed: "", status: cands[0].status, comment: "", resolution: "" };
+    const pick = el("select", { "aria-label": "Какое обращение обновить" },
+      ...cands.map((c) => el("option", { value: String(c.id) }, `${c.number} · ${c.title} — ${c.status_label}`)));
+    const why = el("p", { class: "mat-sub" });
+    const syncWhy = () => {
+      const c = cands.find((x) => String(x.id) === pick.value);
+      why.textContent = c ? `Почему: ${c.why.join("; ")}` : "";
+    };
+    pick.addEventListener("change", syncWhy);
+    syncWhy();
+    const status = el("select", { "aria-label": "Статус после обновления" },
+      ...(statuses || []).map((x) => el("option", { value: x.value }, x.label)));
+    status.value = u.status;
+    const comment = el("textarea", { rows: "4", "aria-label": "Комментарий в историю обращения" });
+    comment.value = u.comment || "";
+    const resolution = el("textarea", { rows: "2", "aria-label": "Решение" });
+    resolution.value = u.resolution || "";
+    const resWrap = el("label", { class: "fld wide" }, el("span", {}, "Решение"), resolution);
+    const syncRes = () => { resWrap.hidden = !["resolved", "closed"].includes(status.value); };
+    status.addEventListener("change", syncRes);
+    syncRes();
+    const fresh = (email.new_letters || []).map((x) => el("li", {},
+      el("strong", {}, `${x.sender || "?"}${x.sent_at ? `, ${fmtTime(x.sent_at)}` : ""}: `), x.excerpt));
+    const note = el("span", { class: "issue-card-note", "aria-live": "polite" });
+    const go = el("button", { type: "button", class: "btn small primary", onclick: async () => {
+      const c = cands.find((x) => String(x.id) === pick.value);
+      go.disabled = true;
+      note.textContent = "прикрепляю письмо…";
+      const me = analyst();
+      try {
+        const body = new FormData();
+        body.append("files", file, file.name);
+        body.append("expand", "true");
+        if (me) body.append("actor", me);
+        let r = await fetch(`/api/issues/${c.id}/attachments`, { method: "POST", body });
+        let res = await r.json();
+        if (!r.ok) throw new Error(typeof res.detail === "string" ? res.detail : `HTTP ${r.status}`);
+        note.textContent = "обновляю обращение…";
+        const cur = await (await fetch(`/api/issues/${c.id}`, { cache: "no-store" })).json();  // версия — после вложения
+        const changes = {};
+        if (status.value && status.value !== cur.status) changes.status = status.value;
+        if (!resWrap.hidden && resolution.value.trim()) changes.resolution = resolution.value.trim();
+        r = await fetch(`/api/issues/${c.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ version: cur.version, changes, comment: comment.value.trim() || null, actor: me }) });
+        res = await r.json();
+        if (!r.ok) throw new Error(r.status === 409 ? "обращение изменили — откройте его и повторите"
+          : typeof res.detail === "string" ? res.detail : `HTTP ${r.status}`);
+        intentFeedback(question, data, "issue_updated", { issue_id: c.id });
+        card.querySelectorAll("input, select, textarea, button").forEach((x) => { x.disabled = true; });
+        actions.replaceChildren(el("strong", {}, `${c.number} обновлено`),
+          el("span", { class: "mat-sub" }, ` · ${res.status_label || ""}`),
+          el("a", { class: "btn small", href: `/issues#${c.id}`, target: "_blank", rel: "noopener" }, `Открыть ${c.number}`));
+      } catch (e) {
+        note.textContent = `Не обновлено: ${e.message}`;
+        go.disabled = false;
+      }
+    } }, `Обновить ${cands[0].number}`);
+    pick.addEventListener("change", () => {
+      const c = cands.find((x) => String(x.id) === pick.value);
+      go.textContent = `Обновить ${c.number}`;
+    });
+    if (!analyst()) note.textContent = "Аналитик не выбран — укажите себя в поле «Я» на вкладке «Обращения».";
+    const actions = el("div", { class: "issue-card-actions" }, go, note);
+    panel.replaceChildren(
+      el("div", { class: "intake-fields" },
+        el("label", { class: "fld wide" }, el("span", {}, "Обращение"), pick), why,
+        u.what_changed ? el("div", { class: "fld wide" }, el("span", {}, "Что изменилось"), el("p", { class: "intake-about" }, u.what_changed)) : null,
+        fresh.length ? el("details", { class: "issue-why wide", open: "" }, el("summary", {}, `Новые письма: ${fresh.length}`), el("ul", {}, ...fresh))
+          : el("p", { class: "mat-sub" }, "Новых писем нет — всё в этом файле уже известно."),
+        el("label", { class: "fld" }, el("span", {}, `Статус (сейчас «${cands[0].status_label}»)`), status),
+        el("label", { class: "fld wide" }, el("span", {}, "Комментарий в историю"), comment),
+        resWrap),
+      actions);
+  };
+
+  // --- новое обращение: черновик из письма (инициатор, дата, тема) и обычная карточка обращения ---
+  const newPanel = async () => {
+    if (data.issue_draft) { panel.replaceChildren(issueCard(question, data, [file])); return; }
+    panel.replaceChildren(el("p", { class: "mat-sub" }, "готовлю черновик обращения из письма…"));
+    try {
+      const body = new FormData();
+      body.append("file", file, file.name);
+      const r = await fetch("/api/issues/from-email", { method: "POST", body });
+      const p = await r.json();
+      if (!r.ok) throw new Error(typeof p.detail === "string" ? p.detail : `HTTP ${r.status}`);
+      const draft = { ...Object.fromEntries(Object.entries(p.draft).filter(([, v]) => v)), initiator: p.initiator,
+        contact: p.contact, already_registered: p.already_registered };
+      panel.replaceChildren(issueCard(question, { ...data, issue_draft: draft }, [file]));
+    } catch (e) {
+      panel.replaceChildren(el("p", { class: "mat-sub" }, `Черновик не собран: ${e.message}`));
+    }
+  };
+
+  // --- только в базу знаний: обычная карточка приёма ---
+  const knowledgePanel = async () => {
+    panel.replaceChildren(el("p", { class: "mat-sub" }, "разбираю для базы…"));
+    try {
+      panel.replaceChildren(intakeCard(await analyzeFiles([file]), [file]));
+    } catch (e) {
+      panel.replaceChildren(el("p", { class: "mat-sub" }, `Не разобрано: ${e.message}`));
+    }
+  };
+
+  const show = (value) => {
+    radios[value].checked = true;
+    if (value === "update") updatePanel();
+    else if (value === "new") newPanel();
+    else knowledgePanel();
+  };
+  show(email.decision === "update" && cands.length ? "update" : email.decision === "new" ? "new" : "knowledge");
   return card;
 }
 

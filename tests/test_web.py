@@ -412,3 +412,14 @@ def test_material_retry_proxy(monkeypatch, tmp_path):
     calls = _core_request(monkeypatch, 200, {"id": 7, "status": "queued"})
     assert c.post("/api/materials/7/retry").json()["status"] == "queued"
     assert calls[-1]["method"] == "POST" and calls[-1]["url"].endswith("/materials/7/retry")
+
+
+def test_issues_triage_proxy(monkeypatch, tmp_path):
+    c = _client(monkeypatch, tmp_path)
+    calls = _core_request(monkeypatch, 200, {"emails": [{"filename": "re.msg", "decision": "update"}]})
+    r = c.post("/api/issues/triage", files=[("files", ("re.msg", b"x", "application/vnd.ms-outlook"))],
+               data={"question": "обнови обращение"})
+    assert r.json()["emails"][0]["decision"] == "update"
+    assert calls[-1]["url"].endswith("/issues/triage") and calls[-1]["data"] == {"question": "обнови обращение"}
+    ok = {"question": "обнови", "verdict": "issue_updated", "intent": {"primary": "issue_mail"}, "issue_id": 9}
+    assert c.post("/api/intent-feedback", json=ok).status_code == 200
