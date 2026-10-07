@@ -16,7 +16,7 @@ def _client(monkeypatch, tmp_path, **settings):
 
 def test_pages_and_static(monkeypatch, tmp_path):
     c = _client(monkeypatch, tmp_path)
-    for path, marker in (("/", "source-panel"), ("/materials", "Материалы проекта"),
+    for path, marker in (("/", "source-panel"), ("/materials", "Входящие"),
                          ("/static/app.js", "renderMarkdown"), ("/static/style.css", "--accent")):
         r = c.get(path)
         assert r.status_code == 200 and marker in r.text, path
@@ -187,7 +187,8 @@ def test_materials_page_has_live_upload(monkeypatch, tmp_path):
     page = c.get("/materials").text
     assert 'id="drop"' in page and 'id="files"' in page and 'id="uploads"' in page and "disabled" not in page
     js = c.get("/static/app.js").text
-    assert "initMaterials" in js and "/api/upload" in js and "/api/materials" in js
+    assert "initMaterials" in js and "/api/intake/analyze" in js and "/api/intake/accept" in js and "/api/materials" in js
+    assert 'id="intake"' in page  # разбор принесённого — перед приёмом
 
 
 def test_file_picker_is_native_label_and_pages_not_cached(monkeypatch, tmp_path):
@@ -363,3 +364,51 @@ def test_escalations_forwarded_and_downloaded(monkeypatch, tmp_path):
 def test_chat_shows_issue_refs(monkeypatch, tmp_path):
     js = _client(monkeypatch, tmp_path).get("/static/app.js").text
     assert "data.issues" in js and "возможный дубль" in js
+
+
+def test_health_prefers_core_search_check(monkeypatch, tmp_path):
+    c = _client(monkeypatch, tmp_path)
+    body = {**CORE_HEALTH, "checks": {**CORE_HEALTH["checks"], "search": {"ok": True, "backend": "postgres",
+                                                                          "chunks": 42}}}
+    body["checks"].pop("vector_store")
+    monkeypatch.setattr(web, "_core_health", lambda: body)
+    assert c.get("/api/health").json()["index"] == {"configured": True, "chunks": 42}
+
+
+def test_intake_analyze_and_accept_proxy(monkeypatch, tmp_path):
+    c = _client(monkeypatch, tmp_path)
+    calls = _core_request(monkeypatch, 200, {"materials": [{"filename": "БТ.docx", "id": 7, "status": "queued"}],
+                                             "contours_created": [{"kind": "process", "name": "Командировки", "id": 3}]})
+    files = [("files", ("БТ.docx", b"docx", "application/octet-stream"))]
+    assert c.post("/api/intake/analyze", files=files).status_code == 200
+    assert calls[-1]["method"] == "POST" and calls[-1]["url"].endswith("/intake/analyze")
+    decisions = json.dumps([{"filename": "БТ.docx", "action": "add", "contours": [3]}])
+    r = c.post("/api/intake/accept", files=files, data={"decisions": decisions})
+    assert r.status_code == 200 and calls[-1]["data"] == {"decisions": decisions}
+    assert calls[-1]["files"][0][1][0] == "БТ.docx"
+    log = (tmp_path / "web" / "uploads.jsonl").read_text(encoding="utf-8")
+    assert "Командировки" in log and '"id": 7' in log
+    many = [("files", (f"{i}.txt", b"x", "text/plain")) for i in range(21)]
+    assert c.post("/api/intake/analyze", files=many).status_code == 413
+
+
+def test_material_delete_contours_documents_threads_proxy(monkeypatch, tmp_path):
+    c = _client(monkeypatch, tmp_path)
+    calls = _core_request(monkeypatch, 200, {"removed_chunks": 5})
+    assert c.delete("/api/materials/7").json() == {"removed_chunks": 5}
+    assert (calls[-1]["method"], calls[-1]["url"].rsplit("/", 2)[-2:]) == ("DELETE", ["materials", "7"])
+    c.get("/api/contours")
+    assert calls[-1]["url"].endswith("/contours") and calls[-1]["params"] == {"all": "false"}
+    c.post("/api/contours", json={"kind": "system", "name": "БП 3.0"})
+    assert calls[-1]["json"] == {"kind": "system", "name": "БП 3.0"}
+    c.get("/api/documents", params={"q": "билет"})
+    assert calls[-1]["params"] == {"q": "билет", "limit": 200}
+    c.get("/api/threads/12")
+    assert calls[-1]["url"].endswith("/threads/12")
+
+
+def test_material_retry_proxy(monkeypatch, tmp_path):
+    c = _client(monkeypatch, tmp_path)
+    calls = _core_request(monkeypatch, 200, {"id": 7, "status": "queued"})
+    assert c.post("/api/materials/7/retry").json()["status"] == "queued"
+    assert calls[-1]["method"] == "POST" and calls[-1]["url"].endswith("/materials/7/retry")

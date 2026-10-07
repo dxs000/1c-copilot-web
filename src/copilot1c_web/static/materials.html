@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Материалы — 1С Project Copilot</title>
+<title>Входящие — 1С Project Copilot</title>
 <link rel="stylesheet" href="/static/style.css">
 <link rel="icon" href="data:,">
 </head>
@@ -16,7 +16,7 @@
   <span class="project">Проект: <b id="project">…</b></span>
   <nav class="tabs" aria-label="Разделы">
     <a href="/">Чат</a>
-    <a href="/materials" aria-current="page">Материалы</a>
+    <a href="/materials" aria-current="page">Входящие</a>
     <a href="/issues">Обращения</a>
   </nav>
   <div class="status" id="status" aria-live="polite"><span class="pill">проверяю систему…</span></div>
@@ -24,7 +24,8 @@
 
 <div class="page">
   <main>
-    <h1>Материалы проекта</h1>
+    <h1>Входящие</h1>
+    <p class="hint">Принесите материалы: письма, требования, описания процессов, протоколы. Система разберёт каждый файл — что это, к какому контуру относится, что из него уже есть в базе — и предложит, что сделать. Вы проверяете и нажимаете «Принять».</p>
     <div class="drop" id="drop">
       <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#0B6B63" stroke-width="1.6" aria-hidden="true"><path d="M12 16V4M7 9l5-5 5 5M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/></svg>
       <strong>Перетащите файлы сюда или выберите на компьютере</strong>
@@ -35,24 +36,26 @@
       <label class="btn primary" for="files" id="pick" tabindex="0" role="button">Выбрать файлы</label>
     </div>
     <p class="upload-status" id="upload-status" aria-live="polite"></p>
+    <div id="intake" class="intake-list"></div>
 
     <section class="card uploads">
       <div class="uploads-head">
-        <h2>Загруженные через веб</h2>
+        <h2>Материалы в базе</h2>
         <span class="uploads-live" id="uploads-live"></span>
       </div>
-      <p class="hint">Каждый файл проходит путь: в очереди → разбор → индексация → запись в базу → готово.
-        Если всё его содержимое уже было в базе (например, документ пришёл раньше вложением письма), статус — «уже есть».</p>
+      <p class="hint">Принятый файл проходит путь: в очереди → разбор → индексация → запись в базу → готово.
+        Если всё его содержимое уже было в базе (документ пришёл раньше вложением письма, письма ветки уже известны),
+        статус — «уже есть». «Убрать из базы» выводит из поиска фрагменты, редакции и письма файла.</p>
       <div id="uploads"><p class="hint">Загружаю список…</p></div>
     </section>
   </main>
 
   <aside>
     <section class="card">
-      <h2>В индексе проекта</h2>
+      <h2>В базе</h2>
       <div class="stats">
-        <div class="stat"><b id="s-chunks">—</b><span>фрагментов в Vector Store</span></div>
-        <div class="stat"><b id="s-pg-chunks">—</b><span>фрагментов в PostgreSQL</span></div>
+        <div class="stat"><b id="s-chunks">—</b><span>фрагментов в поиске</span></div>
+        <div class="stat"><b id="s-pg-chunks">—</b><span>фрагментов всего</span></div>
         <div class="stat"><b id="s-tc">—</b><span>тест-кейсов ПиМИ</span></div>
         <div class="stat"><b id="s-req">—</b><span>пунктов плана тестирования</span></div>
       </div>
@@ -61,7 +64,7 @@
       <h2>Состояние системы</h2>
       <ul class="checks">
         <li><span>Yandex AI Studio</span><span class="val" id="c-yandex">—</span></li>
-        <li><span>Vector Store</span><span class="val" id="c-index">—</span></li>
+        <li><span>База поиска</span><span class="val" id="c-index">—</span></li>
         <li><span>PostgreSQL</span><span class="val" id="c-pg">—</span></li>
         <li><span>Распознавание картинок</span><span class="val" id="c-ocr">—</span></li>
         <li><span>Версия</span><span class="val mono" id="c-version">—</span></li>

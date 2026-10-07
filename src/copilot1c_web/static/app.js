@@ -37,7 +37,7 @@ async function loadHealth() {
       box.title = `Нет ответа от ${h.core.url}. Проверьте службу: systemctl status copilot1c-core`;
     } else box.replaceChildren(
       pill(h.yandex.configured ? "Yandex AI Studio" : "нет ключей Yandex", h.yandex.configured ? "ok" : "bad"),
-      pill(h.index.configured ? `индекс: ${h.index.chunks}` : "индекс не задан", h.index.configured ? "ok" : "bad"),
+      pill(h.index.configured ? `в поиске: ${h.index.chunks}` : "база поиска недоступна", h.index.configured ? "ok" : "bad"),
       pill(h.postgres.ok ? "PostgreSQL" : "PostgreSQL недоступен", h.postgres.ok ? "ok" : "bad"),
     );
     setText("s-chunks", h.index.chunks ?? "—");
@@ -45,7 +45,7 @@ async function loadHealth() {
     setText("s-tc", h.postgres.test_cases ?? "—");
     setText("s-req", h.postgres.requirements ?? "—");
     setText("c-yandex", h.yandex.configured ? `подключено · ${h.yandex.model}` : "нет ключей в .env");
-    setText("c-index", h.index.configured ? `${h.index.chunks} фрагментов` : "COPILOT_VECTOR_STORE_ID не задан");
+    setText("c-index", h.index.configured ? `${h.index.chunks} фрагментов · PostgreSQL` : "недоступна (PostgreSQL, init-db)");
     setText("c-pg", h.postgres.ok ? (h.postgres.detail || `подключено · ${h.postgres.where}`) : `${h.postgres.detail} · ${h.postgres.where}`);
     setText("c-ocr", { yandex: "Yandex Vision OCR", tesseract: "tesseract (локально)", none: "выключено" }[h.ocr] || h.ocr);
     setText("c-version", `${h.version} · ядро ${h.core_version}`);
@@ -257,8 +257,28 @@ function renderAnswer(holder, question, data, files = []) {
     (fb.nextElementSibling?.classList.contains("expert-panel") ? fb.nextElementSibling : last).after(card);
     last = card;
     scrollToEnd(card);
-  } else if (!data.escalation) {
+  } else if (!data.escalation && !data.intake) {
     scrollToEnd(wrap);
+  }
+  if (data.intake?.items?.length) {  // «просмотри и добавь в базу» — карточка разбора сразу
+    const card = intakeCard(data.intake, files);
+    last.after(card);
+    last = card;
+  } else if (files.length) {  // файлы к вопросу — по кнопке их можно разобрать и добавить в базу
+    const offer = el("button", { type: "button" }, "Разобрать для базы…");
+    offer.addEventListener("click", async () => {
+      offer.disabled = true;
+      offer.textContent = "разбираю…";
+      try {
+        const card = intakeCard(await analyzeFiles(files), files);
+        last.after(card);
+        scrollToEnd(card);
+        offer.remove();
+      } catch (e) {
+        offer.textContent = `Не разобрано: ${e.message}`;
+      }
+    });
+    fb.insertBefore(offer, fb.lastChild);
   }
 }
 
@@ -476,6 +496,168 @@ function issueCard(question, data, files = []) {
   return card;
 }
 
+// ---------- «Входящие»: карточка разбора и приёма материалов (чат и экран «Входящие») ----------
+
+const RELATION = {
+  new: () => "в базе нет",
+  already_uploaded: (r) => `этот файл уже загружали («${r.filename}», ${r.status})`,
+  same_content: (r) => `то же содержание уже в базе: «${r.document_title}»`,
+  new_version: (r) => `похоже на новую редакцию «${r.document_title}»` + (r.version_label ? ` (сейчас ред. ${r.version_label})` : ""),
+  known_letters: () => "все письма уже в базе",
+};
+
+function relationText(rel) {
+  return (RELATION[rel?.type] || RELATION.new)(rel || {});
+}
+
+function emailText(email) {
+  if (!email) return "";
+  const parts = [`писем новых: ${email.letters_new}, уже известных: ${email.letters_known}`];
+  for (const t of email.threads || []) {
+    parts.push(`ветка «${t.title}»${t.id ? "" : " (новая)"}` + (t.issue_id ? ` · обращение ОБР-${String(t.issue_id).padStart(4, "0")}` : ""));
+  }
+  return parts.join(" · ");
+}
+
+// analysis — ответ /api/intake/analyze (или data.intake из чата), files — те же File из браузера;
+// onDone(result) — после приёма (обновить список на экране «Входящие»)
+function intakeCard(analysis, files, onDone) {
+  const contours = analysis.contours || [];
+  const kinds = analysis.kinds || {};
+  const actions = analysis.actions || {};
+  const card = el("section", { class: "intake-card", "aria-label": "Разбор приложенного для базы" });
+  card.append(el("div", { class: "issue-card-head" },
+    el("strong", {}, `Разбор для базы: ${plural(analysis.items.length, "файл", "файла", "файлов")}`),
+    el("span", { class: "mat-sub" }, analysis.method === "llm" ? "вид и контуры уточнила модель" : "по названиям и справочнику контуров")));
+
+  // контуры «для всех»: отметка ставит или снимает контур во всех строках
+  const rows = [];
+  if (contours.length) {
+    const all = el("div", { class: "intake-all" }, el("span", { class: "mat-sub" }, "Контур для всех:"));
+    contours.forEach((c) => all.append(el("button", { type: "button", class: "chip-toggle", onclick: () => {
+      const on = !rows.every((r) => r.contourBoxes.get(c.id)?.checked);
+      rows.forEach((r) => { const b = r.contourBoxes.get(c.id); if (b && !b.disabled) b.checked = on; });
+    } }, c.name)));
+    card.append(all);
+  }
+
+  analysis.items.forEach((it) => {
+    const row = { it, contourBoxes: new Map(), newContour: null };
+    const kind = el("select", { "aria-label": `Вид: ${it.filename}` },
+      ...Object.entries(kinds).map(([k, label]) => el("option", { value: k }, label)));
+    kind.value = it.doc_kind;
+    if (it.kind === "email") kind.disabled = true;
+    const action = el("select", { "aria-label": `Что сделать: ${it.filename}` });
+    for (const [k, label] of Object.entries(actions)) {
+      if (k === "new_version" && !(it.relation?.candidates?.length)) continue;
+      action.append(el("option", { value: k }, label));
+    }
+    action.value = it.action;
+    const target = el("select", { "aria-label": "Какого документа редакция", hidden: "" },
+      ...(it.relation?.candidates || []).map((d) => el("option", { value: String(d.id) }, d.title)));
+    const syncTarget = () => { target.hidden = action.value !== "new_version"; };
+    action.addEventListener("change", syncTarget);
+    syncTarget();
+    row.kind = kind; row.action = action; row.target = target;
+
+    const chips = el("div", { class: "intake-contours" });
+    contours.forEach((c) => {
+      const box = el("input", { type: "checkbox" });
+      box.checked = (it.contours || []).includes(c.id);
+      row.contourBoxes.set(c.id, box);
+      chips.append(el("label", { class: "chip-check", title: c.kind_label }, box, ` ${c.name}`));
+    });
+    if (it.new_contour) {  // модель предлагает новый контур — отметкой он добавится в справочник
+      const box = el("input", { type: "checkbox" });
+      box.checked = true;
+      row.newContour = { box, ...it.new_contour };
+      chips.append(el("label", { class: "chip-check new" }, box, ` новый: ${it.new_contour.name}`));
+    }
+    const addKind = el("select", { "aria-label": "Вид нового контура" },
+      el("option", { value: "process" }, "процесс"), el("option", { value: "system" }, "система"),
+      el("option", { value: "project" }, "проект"));
+    const addName = el("input", { type: "text", placeholder: "новый контур", "aria-label": "Название нового контура",
+      maxlength: "200" });
+    row.addKind = addKind; row.addName = addName;
+    chips.append(el("span", { class: "intake-add" }, addKind, addName));
+
+    const inner = (it.inner || []).map((x) => el("li", {}, x.same_as ? `${x.filename} — то же, что приложенный «${x.same_as}»`
+      : `${x.filename}${x.title ? ` — «${x.title}»` : ""}; ${relationText(x.relation)}`));
+    const node = el("div", { class: "intake-row" },
+      el("div", { class: "intake-top" }, el("span", { class: "mat-name" }, it.filename),
+        it.title && it.title !== it.filename ? el("span", { class: "mat-sub" }, `«${it.title}»${it.version ? `, ред. ${it.version}` : ""}`) : null),
+      it.about ? el("p", { class: "intake-about" }, it.about) : null,
+      el("p", { class: "intake-rel" }, it.email ? emailText(it.email) : relationText(it.relation)),
+      inner.length ? el("details", { class: "issue-why" }, el("summary", {}, `Внутри письма: ${inner.length}`), el("ul", {}, ...inner)) : null,
+      it.notes?.length ? el("p", { class: "mat-sub" }, it.notes.join("; ")) : null,
+      el("div", { class: "intake-fields" },
+        el("label", { class: "fld" }, el("span", {}, "Вид"), kind),
+        el("label", { class: "fld" }, el("span", {}, "Что сделать"), action, target),
+        el("div", { class: "fld wide" }, el("span", {}, "Контуры"), chips)),
+      it.reason ? el("p", { class: "mat-sub" }, `Почему так предложено: ${it.reason}`) : null);
+    row.node = node;
+    rows.push(row);
+    card.append(node);
+  });
+
+  const note = el("span", { class: "issue-card-note", "aria-live": "polite" });
+  const accept = el("button", { type: "button", class: "btn small primary", onclick: async () => {
+    const decisions = rows.map((r) => {
+      const fresh = [];
+      if (r.newContour?.box.checked) fresh.push({ kind: r.newContour.kind, name: r.newContour.name });
+      if (r.addName.value.trim()) fresh.push({ kind: r.addKind.value, name: r.addName.value.trim() });
+      return {
+        filename: r.it.filename, action: r.action.value, kind: r.kind.disabled ? null : r.kind.value,
+        contours: [...r.contourBoxes].filter(([, b]) => b.checked).map(([id]) => id),
+        document_id: r.action.value === "new_version" ? Number(r.target.value) || null : null,
+        new_contours: fresh,
+      };
+    });
+    const send = files.filter((f) => decisions.some((d) => d.filename === f.name && d.action !== "skip"));
+    if (!send.length) { note.textContent = "Ничего не выбрано для добавления."; return; }
+    accept.disabled = true;
+    note.textContent = "передаю в обработку…";
+    const body = new FormData();
+    send.forEach((f) => body.append("files", f, f.name));
+    body.append("decisions", JSON.stringify(decisions));
+    try {
+      const r = await fetch("/api/intake/accept", { method: "POST", body });
+      const res = await r.json();
+      if (!r.ok) throw new Error(typeof res.detail === "string" ? res.detail : `HTTP ${r.status}`);
+      const mats = res.materials || [];
+      const queued = mats.filter((m) => m.status === "queued").length;
+      const archived = mats.filter((m) => m.status === "archived").length;
+      const before = mats.filter((m) => m.already_uploaded).length;
+      const errors = mats.filter((m) => m.error);
+      const parts = [`в обработку: ${queued}`];
+      if (archived) parts.push(`без индексации: ${archived}`);
+      if (before) parts.push(`уже были в базе (контуры обновлены): ${before}`);
+      if (res.contours_created?.length) parts.push(`новые контуры: ${res.contours_created.map((c) => c.name).join(", ")}`);
+      if (errors.length) parts.push(`ошибки: ${errors.map((m) => `${m.filename} — ${m.error}`).join("; ")}`);
+      rows.forEach((r) => r.node.querySelectorAll("select, input, button").forEach((x) => { x.disabled = true; }));
+      card.querySelectorAll(".intake-all button").forEach((x) => { x.disabled = true; });
+      actionsBox.replaceChildren(el("strong", {}, "Принято. "), el("span", {}, parts.join(" · ")),
+        location.pathname === "/materials" ? null : el("a", { class: "btn small", href: "/materials", target: "_blank", rel: "noopener" }, "Открыть «Входящие»"));
+      if (onDone) onDone(res);
+    } catch (e) {
+      note.textContent = `Не принято: ${e.message}`;
+      accept.disabled = false;
+    }
+  } }, "Принять");
+  const actionsBox = el("div", { class: "issue-card-actions" }, accept, note);
+  card.append(actionsBox);
+  return card;
+}
+
+async function analyzeFiles(files) {
+  const body = new FormData();
+  files.forEach((f) => body.append("files", f, f.name));
+  const r = await fetch("/api/intake/analyze", { method: "POST", body });
+  const data = await r.json();
+  if (!r.ok) throw new Error(typeof data.detail === "string" ? data.detail : `HTTP ${r.status}`);
+  return data;
+}
+
 function initChat() {
   const form = $("ask");
   if (!form) return;
@@ -580,10 +762,11 @@ function initChat() {
 }
 
 
-// ---------- материалы: загрузка через веб и судьба файлов ----------
+// ---------- «Входящие»: материалы, их разбор и судьба ----------
 
 const ACTIVE = new Set(["queued", "parsing", "indexing", "graph"]);
-const STATUS_CLASS = { done: "done", error: "error", duplicate: "" };
+const STATUS_CLASS = { done: "done", error: "error", duplicate: "", deleted: "", archived: "" };
+let contourNames = {};
 
 function fmtSize(n) {
   if (n < 1024) return `${n} Б`;
@@ -615,6 +798,12 @@ function reportItems(r) {
   }
   if (r.images) items.push(`распознано картинок: ${r.images}`);
   if (r.chunks !== undefined) items.push(`фрагментов: ${r.chunks}, из них новых: ${r.chunks_new ?? 0}`);
+  for (const t of r.threads || []) items.push(`ветка «${t.title}»: новых писем ${t.new}, известных ${t.known}`);
+  for (const v of r.versions || []) {
+    items.push(v.superseded_versions ? `новая редакция документа «${v.title}» — прежняя выведена из поиска`
+      : `документ «${v.title}» — в реестре документов`);
+  }
+  if (r.contours?.length) items.push(`контуры: ${r.contours.map((id) => contourNames[id] || id).join(", ")}`);
   for (const w of r.already_in_base || []) items.push(`уже в базе: ${w}`);
   for (const s of r.skipped || []) items.push(`пропущено ${s.file}: ${s.reason}`);
   return items;
@@ -629,6 +818,34 @@ function materialRow(m) {
     const list = el("ul");
     items.forEach((x) => list.append(el("li", {}, x)));
     result.append(el("details", {}, el("summary", {}, "Подробнее"), list));
+  }
+  if (["done", "duplicate", "error", "archived"].includes(m.status)) {  // убрать из базы: фрагменты, редакции, письма
+    const del = el("button", { type: "button", class: "link-btn muted", onclick: async () => {
+      if (!confirm(`Убрать «${m.filename}» из базы? Фрагменты, редакции документов и письма из этого файла `
+        + "перестанут находиться; сам файл останется в реестре.")) return;
+      del.disabled = true;
+      try {
+        const r = await fetch(`/api/materials/${m.id}`, { method: "DELETE" });
+        const res = await r.json();
+        if (!r.ok) throw new Error(typeof res.detail === "string" ? res.detail : `HTTP ${r.status}`);
+        loadMaterials();
+        loadHealth();
+      } catch (e) {
+        del.disabled = false;
+        del.textContent = `Не удалено: ${e.message}`;
+      }
+    } }, "Убрать из базы");
+    const tools = el("div", { class: "mat-tools" });
+    if (m.status === "error") {  // повторить — например, после того как появились ключи AI Studio
+      const retry = el("button", { type: "button", class: "link-btn accent", onclick: async () => {
+        retry.disabled = true;
+        const r = await fetch(`/api/materials/${m.id}/retry`, { method: "POST" });
+        if (r.ok) loadMaterials(); else { retry.disabled = false; retry.textContent = "Не удалось повторить"; }
+      } }, "Повторить");
+      tools.append(retry);
+    }
+    tools.append(del);
+    result.append(tools);
   }
   const when = m.finished_at ? `обработан ${fmtTime(m.finished_at)}` : m.started_at ? `начат ${fmtTime(m.started_at)}` : "";
   return el("tr", {},
@@ -672,6 +889,7 @@ async function loadMaterials() {
 }
 
 async function uploadFiles(fileList) {
+  // «Входящие»: сначала разбор (что это, к чему относится, что уже есть), потом приём по решению аналитика
   const files = [...fileList];
   if (!files.length) return;
   const drop = $("drop");
@@ -681,33 +899,26 @@ async function uploadFiles(fileList) {
     status.textContent = "Не больше 20 файлов за раз.";
     return;
   }
-  const body = new FormData();
-  files.forEach((f) => body.append("files", f, f.name));
   drop.classList.add("busy");
   $("pick").setAttribute("aria-disabled", "true");
   status.className = "upload-status";
-  status.textContent = `Отправляю ${plural(files.length, "файл", "файла", "файлов")}…`;
+  status.textContent = `Разбираю ${plural(files.length, "файл", "файла", "файлов")}…`;
   try {
-    const r = await fetch("/api/upload", { method: "POST", body });
-    const data = await r.json();
-    if (!r.ok) throw new Error(typeof data.detail === "string" ? data.detail : `HTTP ${r.status}`);
-    const res = data.materials || [];
-    const accepted = res.filter((m) => !m.error && !m.already_uploaded).length;
-    const again = res.filter((m) => m.already_uploaded).length;
-    const rejected = res.filter((m) => m.error);
-    const parts = [`принято в обработку: ${accepted}`];
-    if (again) parts.push(`уже загружались раньше: ${again}`);
-    if (rejected.length) parts.push(`не принято: ${rejected.map((m) => `${m.filename} (${m.error})`).join(", ")}`);
-    status.className = "upload-status" + (rejected.length && !accepted ? " bad" : "");
-    status.textContent = parts.join(" · ");
+    const analysis = await analyzeFiles(files);
+    status.textContent = "Проверьте разбор и нажмите «Принять».";
+    const card = intakeCard(analysis, files, () => {
+      status.textContent = "";
+      loadMaterials();
+    });
+    $("intake").prepend(card);
+    card.scrollIntoView({ behavior: "smooth", block: "start" });
   } catch (e) {
     status.className = "upload-status bad";
-    status.textContent = `Не удалось загрузить: ${e.message}`;
+    status.textContent = `Не удалось разобрать: ${e.message}`;
   } finally {
     drop.classList.remove("busy");
     $("pick").removeAttribute("aria-disabled");
     $("files").value = "";
-    loadMaterials();
   }
 }
 
@@ -727,7 +938,9 @@ function initMaterials() {
     drop.classList.remove("over");
     uploadFiles(e.dataTransfer.files);
   });
-  loadMaterials();
+  fetch("/api/contours", { cache: "no-store" }).then((r) => (r.ok ? r.json() : null)).then((d) => {
+    contourNames = Object.fromEntries((d?.contours || []).map((c) => [c.id, c.name]));
+  }).catch(() => {}).finally(loadMaterials);
 }
 
 loadHealth();

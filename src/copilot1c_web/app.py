@@ -1,6 +1,6 @@
 """Веб-приложение 1С Project Copilot.
 
-Экраны «Чат», «Материалы» и «Обращения», состояние системы и вопросы к агенту с источниками. Всё
+Экраны «Чат», «Входящие» (разбор и приём материалов) и «Обращения», состояние системы и вопросы к агенту с источниками. Всё
 уходит в демон ядра (служба copilot1c-core, HTTP на 127.0.0.1:8100; адрес — COPILOT_CORE_URL): у ядра
 свои настройки, индекс, база и файлы. Веб только пересылает запросы и отдаёт страницы.
 
@@ -70,7 +70,7 @@ def health() -> JSONResponse:
                      "postgres": {"ok": False, "where": "", "detail": "ядро недоступно"}, "ocr": "?"})
         return JSONResponse(body)
     c = core.get("checks", {})
-    ai, vs, pg = c.get("ai_studio", {}), c.get("vector_store", {}), c.get("postgres", {})
+    ai, vs, pg = c.get("ai_studio", {}), c.get("search") or c.get("vector_store", {}), c.get("postgres", {})
     postgres = {"ok": pg.get("ok", False), "where": pg.get("host", "")}
     postgres.update({k: pg[k] for k in ("chunks", "test_cases", "requirements", "detail") if k in pg})
     body.update({
@@ -252,6 +252,76 @@ def upload(files: Annotated[list[UploadFile], File()]) -> dict:
 def materials(limit: int = 200) -> dict:
     """Реестр загруженных материалов и их статусы (по данным демона ядра)."""
     return _core_call("GET", "/materials", params={"limit": limit})
+
+
+@app.delete("/api/materials/{material_id}")
+def material_delete(material_id: int) -> dict:
+    """Убрать материал из базы: фрагменты, редакции документов, письма (файл и запись реестра остаются)."""
+    data = _core_call("DELETE", f"/materials/{material_id}")
+    _log("uploads", {"deleted": material_id, "chunks": data.get("removed_chunks")})
+    return data
+
+
+@app.post("/api/materials/{material_id}/retry")
+def material_retry(material_id: int) -> dict:
+    """Материал с ошибкой — снова в очередь обработки."""
+    return _core_call("POST", f"/materials/{material_id}/retry")
+
+
+# ---------- «Входящие»: разбор принесённого и приём по решению аналитика ----------
+
+def _parts(files: list[UploadFile]) -> list:
+    if len(files) > MAX_UPLOAD_FILES:
+        raise HTTPException(413, f"Не больше {MAX_UPLOAD_FILES} файлов за раз")
+    return [("files", (f.filename or "файл", f.file.read(), f.content_type or "application/octet-stream"))
+            for f in files]
+
+
+@app.post("/api/intake/analyze")
+def intake_analyze(files: Annotated[list[UploadFile], File()]) -> dict:
+    """Что это, к чему относится, что уже в базе, что предложить — без сохранения (ядро: POST /intake/analyze)."""
+    return _core_call("POST", "/intake/analyze", files=_parts(files))
+
+
+@app.post("/api/intake/accept")
+def intake_accept(files: Annotated[list[UploadFile], File()], decisions: Annotated[str, Form()] = "[]") -> dict:
+    """Файлы с решениями аналитика → ядро (POST /intake/accept): в обработку, без индексации или мимо."""
+    data = _core_call("POST", "/intake/accept", files=_parts(files), data={"decisions": decisions})
+    _log("uploads", {"intake": [{"filename": m.get("filename"), "id": m.get("id"), "status": m.get("status"),
+                                 "skipped": m.get("skipped"), "error": m.get("error")}
+                                for m in data.get("materials", [])],
+                     "contours_created": data.get("contours_created", [])})
+    return data
+
+
+@app.get("/api/contours")
+def contours(all: bool = False) -> dict:  # noqa: A002 — имя параметра запроса
+    return _core_call("GET", "/contours", params={"all": str(all).lower()})
+
+
+@app.post("/api/contours")
+def contours_create(body: Annotated[dict, Body()]) -> dict:
+    return _core_call("POST", "/contours", json=body)
+
+
+@app.patch("/api/contours/{contour_id}")
+def contours_patch(contour_id: int, body: Annotated[dict, Body()]) -> dict:
+    return _core_call("PATCH", f"/contours/{contour_id}", json=body)
+
+
+@app.get("/api/documents")
+def documents(q: str = "", limit: int = 200) -> dict:
+    return _core_call("GET", "/documents", params={"q": q, "limit": limit} if q else {"limit": limit})
+
+
+@app.get("/api/threads")
+def threads(q: str = "", limit: int = 100) -> dict:
+    return _core_call("GET", "/threads", params={"q": q, "limit": limit} if q else {"limit": limit})
+
+
+@app.get("/api/threads/{thread_id}")
+def thread(thread_id: int) -> dict:
+    return _core_call("GET", f"/threads/{thread_id}")
 
 
 # ---------- обращения: те же методы, что у демона ядра (/issues…, /contacts), под префиксом /api ----------

@@ -357,3 +357,34 @@ body.drawer-open { overflow: hidden; }
 .expert-files { margin: 0; padding-left: 18px; font-size: 13px; color: var(--muted); }
 .issue-refs li { border-style: solid; border-color: var(--warn-line); background: var(--warn-tint); }
 .issue-refs a::after { content: ""; }
+
+/* «Входящие»: карточка разбора и приёма */
+.intake-list { display: flex; flex-direction: column; gap: 16px; margin-bottom: 16px; }
+.intake-card { border: 1px solid var(--accent); background: var(--surface); border-radius: 12px; padding: 14px 16px;
+  display: flex; flex-direction: column; gap: 12px; white-space: normal; }
+.msg-bot + .sources ~ .intake-card, .actions + .intake-card { margin-top: 4px; }
+.intake-all { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; }
+.chip-toggle { font-size: 13px; padding: 4px 10px; border: 1px solid var(--accent); color: var(--accent); background: var(--surface);
+  border-radius: 14px; cursor: pointer; min-height: 32px; }
+.chip-toggle:hover { background: var(--accent-tint); }
+.intake-row { border-top: 1px solid var(--line-soft); padding-top: 12px; display: flex; flex-direction: column; gap: 6px; }
+.intake-top { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; }
+.intake-about { margin: 0; font-size: 14px; }
+.intake-rel { margin: 0; font-size: 13px; color: var(--accent-ink); }
+.intake-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 10px 14px; }
+.intake-fields select, .intake-fields input { padding: 8px 10px; border: 1px solid #B9BFB5; border-radius: 8px; background: var(--surface); min-height: 40px; }
+.intake-fields select + select { margin-top: 6px; }
+.intake-contours { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; }
+.chip-check { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border: 1px solid var(--line); border-radius: 14px;
+  font-size: 13px; color: var(--ink); background: var(--surface-2); cursor: pointer; min-height: 32px; white-space: nowrap; }
+.fld .chip-check input { width: 16px; height: 16px; min-height: 0; padding: 0; margin: 0; accent-color: var(--accent); flex: none; }
+.intake-contours { flex-direction: row; }
+.mat-tools { display: flex; flex-wrap: wrap; gap: 4px 16px; margin-top: 6px; font-size: 13px; }
+.link-btn.accent { color: var(--accent); }
+.link-btn.muted { color: var(--muted); font-weight: 400; }
+.chip-check:has(input:checked) { border-color: var(--accent); background: var(--accent-tint); color: var(--accent-ink); }
+.chip-check.new { border-style: dashed; }
+.intake-add { display: inline-flex; gap: 6px; }
+.intake-add input { width: 160px; }
+.intake-card .issue-card-actions strong { color: var(--ok); }
+@media (max-width: 640px) { .intake-add input { width: 120px; } }
