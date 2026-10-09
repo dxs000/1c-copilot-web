@@ -422,3 +422,37 @@ body.drawer-open { overflow: hidden; }
 .ev-letter.ev-notify { border-left-color: var(--line); opacity: 0.85; }
 .ev-letter-text { white-space: pre-wrap; font-size: 14px; margin-top: 2px; }
 .ev-role { color: var(--muted); font-size: 13px; }
+
+/* Секретарь: диалог слева, «сейчас» справа */
+.sec { display: grid; grid-template-columns: minmax(0, 1fr) 360px; min-height: calc(100vh - 61px); }
+.sec-side { border-left: 1px solid var(--line); background: var(--surface-2); padding: 20px 16px; display: flex;
+  flex-direction: column; gap: 16px; }
+.sec-msg .sec-text { white-space: pre-wrap; }
+.msg-bot.sec-alert { border-color: var(--accent); border-left-width: 4px; background: var(--accent-tint); color: var(--ink); }
+.sec-who { display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--muted); margin-bottom: 12px; }
+.sec-who input { flex-grow: 1; min-width: 0; padding: 6px 10px; border: 1px solid #B9BFB5; border-radius: 8px;
+  min-height: 36px; }
+.sec-who input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+.sec-city { margin: 0; font-size: 18px; }
+.sec-city b { font-weight: 600; }
+.sec-clock { margin: 4px 0 0; font-size: 44px; line-height: 1.1; font-weight: 500; letter-spacing: 0.01em;
+  font-variant-numeric: tabular-nums; }
+.sec-date { margin: 4px 0 0; color: var(--muted); font-size: 14px; }
+.sec-session-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.sec-session-head h2 { margin: 0; }
+.sec-left { margin: 10px 0 8px; font-size: 32px; font-weight: 500; font-variant-numeric: tabular-nums; }
+.sec-bar { height: 8px; border-radius: 4px; background: var(--line-soft); overflow: hidden; margin-bottom: 8px; }
+.sec-bar span { display: block; height: 100%; width: 0; background: var(--accent); transition: width 1s linear; }
+.sec-session.rest .sec-bar span { background: var(--ok); }
+.sec-session .hint { margin: 0; }
+.sec-today { margin: 0 0 14px; font-size: 14px; }
+.sec-sub { margin-top: 4px; }
+.sec-trips { list-style: none; margin: 0 0 12px; padding: 0; display: flex; flex-direction: column; gap: 4px;
+  font-size: 14px; }
+.sec-trips .hint { margin: 0; }
+.sec-session[hidden] { display: none; }
+@media (max-width: 900px) {
+  .sec { grid-template-columns: 1fr; }
+  .sec-side { order: -1; border-left: 0; border-bottom: 1px solid var(--line); }
+  .sec-clock { font-size: 36px; }
+}

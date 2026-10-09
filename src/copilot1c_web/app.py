@@ -1,6 +1,7 @@
 """Веб-приложение 1С Project Copilot.
 
-Экраны «Чат», «Входящие» (разбор и приём материалов) и «Обращения», состояние системы и вопросы к агенту с источниками. Всё
+Экраны «Чат», «Входящие» (разбор и приём материалов), «Обращения» и «Секретарь» (распорядок дня),
+состояние системы и вопросы к агенту с источниками. Всё
 уходит в демон ядра (служба copilot1c-core, HTTP на 127.0.0.1:8100; адрес — COPILOT_CORE_URL): у ядра
 свои настройки, индекс, база и файлы. Веб только пересылает запросы и отдаёт страницы.
 
@@ -450,6 +451,38 @@ def contacts(q: str = "", limit: int = 50) -> dict:
 @app.post("/api/contacts")
 def contacts_upsert(body: Annotated[dict, Body()]) -> dict:
     return _core_call("POST", "/contacts", json=body)
+
+
+# ---------- секретарь: место, рабочие сессии и перерывы (всё хранит и считает ядро) ----------
+
+@app.post("/api/secretary/say")
+def secretary_say(body: Annotated[dict, Body()]) -> dict:
+    return _core_call("POST", "/secretary/say", json=body)
+
+
+@app.get("/api/secretary/state")
+def secretary_state(person: str = "") -> dict:
+    return _core_call("GET", "/secretary/state", params={"person": person})
+
+
+@app.get("/api/secretary/notices")
+def secretary_notices(person: str = "", after: int = 0, unread: bool = False) -> dict:
+    return _core_call("GET", "/secretary/notices", params={"person": person, "after": after, "unread": unread})
+
+
+@app.post("/api/secretary/notices/{notice_id}/read")
+def secretary_notice_read(notice_id: int, body: Annotated[dict, Body()]) -> dict:
+    return _core_call("POST", f"/secretary/notices/{notice_id}/read", json=body)
+
+
+@app.get("/api/secretary/places")
+def secretary_places(person: str = "", limit: int = 50) -> dict:
+    return _core_call("GET", "/secretary/places", params={"person": person, "limit": limit})
+
+
+@app.get("/secretary")
+def secretary_page() -> FileResponse:
+    return FileResponse(STATIC / "secretary.html")
 
 
 @app.get("/issues")

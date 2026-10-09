@@ -432,3 +432,25 @@ def test_suggest_contours_proxy(monkeypatch, tmp_path):
     assert r.json()["contours"] == [1, 2] and calls[-1]["json"] == {"title": "висит служба терминалов"}
     c.get("/api/issues", params={"contour": "1", "open": "true"})
     assert calls[-1]["url"].endswith("/issues") and calls[-1]["params"]["contour"] == "1"
+
+
+def test_secretary_page_and_proxy(monkeypatch, tmp_path):
+    c = _client(monkeypatch, tmp_path)
+    r = c.get("/secretary")
+    assert r.status_code == 200 and "sec-form" in r.text and "/static/secretary.js" in r.text
+    assert "notices" in c.get("/static/secretary.js").text
+    calls = []
+
+    def fake(method, path, **kw):
+        calls.append((method, path, kw))
+        return {"reply": "Записал", "state": {}} if path == "/secretary/say" else {"ok": True}
+
+    monkeypatch.setattr(web, "_core_call", fake)
+    assert c.post("/api/secretary/say", json={"person": "Иван", "text": "я в Варшаве"}).json()["reply"] == "Записал"
+    c.get("/api/secretary/state", params={"person": "Иван"})
+    c.post("/api/secretary/notices/7/read", json={"person": "Иван"})
+    assert calls[0] == ("POST", "/secretary/say", {"json": {"person": "Иван", "text": "я в Варшаве"}})
+    assert calls[1] == ("GET", "/secretary/state", {"params": {"person": "Иван"}})
+    assert calls[2][1] == "/secretary/notices/7/read"
+    for page in ("/", "/materials", "/issues"):
+        assert 'href="/secretary"' in c.get(page).text, page
