@@ -31,7 +31,8 @@ function bookRow(b) {
   const tr = el("tr", { class: "book-row" + (b.status === "done" ? " done" : ""), tabindex: "0",
     "aria-expanded": BOOKS.open.has(b.id) ? "true" : "false" },
     el("td", { class: "num" }, String(b.num)),
-    el("td", {}, el("b", {}, b.title), b.author ? el("div", { class: "hint" }, b.author) : ""),
+    el("td", {}, el("b", {}, b.title), b.author ? el("div", { class: "hint" }, b.author) : "",
+      b.section ? el("div", { class: "book-section" }, `сейчас: ${b.section}`) : ""),
     el("td", {}, el("span", { class: `book-status ${b.status}` }, STATUS[b.status] || b.status)),
     el("td", { class: "num" }, fmtNum(b.page)),
     progressCell(b),
@@ -50,15 +51,26 @@ function bookRow(b) {
 function historyRow(b) {
   const td = el("td", { colspan: "8", class: "book-history" }, el("p", { class: "hint" }, "Загружаю историю…"));
   booksApi(`/api/secretary/books/${b.id}?${q()}`).then((h) => {
-    if (!h.entries.length) { td.replaceChildren(el("p", { class: "hint" }, "Отметок ещё не было.")); return; }
-    td.replaceChildren(el("table", { class: "history-table" },
+    const hasToc = (h.toc || []).length > 0;
+    const history = h.entries.length ? el("table", { class: "history-table" },
       el("thead", {}, el("tr", {}, el("th", {}, "Когда (местное время)"), el("th", { class: "num" }, "Страница"),
-        el("th", { class: "num" }, "Прирост"), el("th", {}, "Где"))),
+        el("th", { class: "num" }, "Прирост"), hasToc ? el("th", {}, "Раздел") : "", el("th", {}, "Где"))),
       el("tbody", {}, ...h.entries.map((e) => el("tr", {},
         el("td", {}, `${e.local_text} `, el("span", { class: "hint" }, e.utc_offset)),
         el("td", { class: "num" }, String(e.page)),
         el("td", { class: "num" + (e.delta < 0 ? " neg" : "") }, e.delta == null ? "—" : (e.delta >= 0 ? `+${e.delta}` : String(e.delta))),
-        el("td", {}, e.city || "—"))))));
+        hasToc ? el("td", {}, e.section || "—") : "",
+        el("td", {}, e.city || "—")))))
+      : el("p", { class: "hint" }, "Отметок ещё не было: «Книга N, остановился на стр. 15».");
+    const MARK = { read: "✓", current: "▶", ahead: "" };
+    const contents = hasToc ? el("ol", { class: "toc-list" }, ...h.toc.map((e) => el("li", { class: `toc-${e.state}` },
+      el("span", { class: "toc-mark", "aria-hidden": "true" }, MARK[e.state]),
+      el("span", { class: "toc-title" }, e.title), el("span", { class: "toc-page" }, `стр. ${e.page}`),
+      e.state === "current" ? el("span", { class: "visually-hidden" }, " — вы здесь") : "")))
+      : el("p", { class: "hint" }, "Оглавления нет: «Книга N, стр. 5, Предисловие» или списком.");
+    td.replaceChildren(el("div", { class: "book-detail" },
+      el("section", {}, el("h3", {}, "История чтения"), history),
+      el("section", {}, el("h3", {}, "Оглавление"), contents)));
   }).catch((e) => td.replaceChildren(el("p", { class: "hint" }, `Не получилось: ${e.message}`)));
   return el("tr", { class: "history-row" }, td);
 }

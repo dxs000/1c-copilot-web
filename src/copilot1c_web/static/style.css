@@ -521,3 +521,18 @@ body.drawer-open { overflow: hidden; }
   .books-page { padding: 20px 16px; }
   .history-row > td { padding-left: 12px; }
 }
+
+/* Книги: текущий раздел, история и оглавление рядом */
+.book-section { margin-top: 2px; font-size: 12px; color: var(--accent); }
+.book-detail { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 24px; align-items: start; }
+.book-detail h3 { margin: 8px 0 6px; font-size: 13px; font-weight: 600; }
+.book-detail .history-table { min-width: 0; width: 100%; }
+.toc-list { list-style: none; margin: 0; padding: 0; font-size: 13px; display: flex; flex-direction: column; }
+.toc-list li { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; gap: 6px; padding: 5px 0;
+  border-bottom: 1px solid var(--line-soft); }
+.toc-mark { color: var(--ok); text-align: center; }
+.toc-page { color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.toc-read .toc-title { color: var(--muted); }
+.toc-current { font-weight: 600; }
+.toc-current .toc-mark { color: var(--accent); }
+@media (max-width: 900px) { .book-detail { grid-template-columns: 1fr; } }

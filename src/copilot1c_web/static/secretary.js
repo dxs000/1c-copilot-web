@@ -218,7 +218,8 @@ function renderBooks(books) {
     const btn = el("button", { type: "button", class: "sec-book", title: "Отметить страницу",
       onclick: () => { const q = $("sec-q"); q.value = `книга № ${b.num}, страница `; q.focus(); } },
       el("b", {}, `№ ${b.num}`), " ", el("span", { class: "sec-book-title" }, b.title),
-      el("span", { class: "sec-book-meta" }, page + (b.last_text ? ` · ${b.last_text}` : "")), b.total_pages ? bar : "");
+      el("span", { class: "sec-book-meta" }, page + (b.section ? ` · ${b.section}` : "") + (b.last_text ? ` · ${b.last_text}` : "")),
+      b.total_pages ? bar : "");
     return el("li", {}, btn);
   }));
 }
