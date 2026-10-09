@@ -192,6 +192,7 @@ function applyState(st) {
   const trips = st.upcoming || [];
   $("sec-trips").replaceChildren(...(trips.length ? trips.map((u) => el("li", {},
     el("b", {}, u.city), ` — с ${fmtDay(u.date)}`)) : [el("li", { class: "hint" }, "Запланированных нет")]));
+  renderBooks(st.books || []);
   for (const n of st.unread || []) deliver(n);
   tick();
 }
@@ -202,6 +203,24 @@ function fmtDay(iso) {
   if (!y) return "—";
   return new Intl.DateTimeFormat("ru-RU", { timeZone: "UTC", day: "numeric", month: "long", weekday: "long" })
     .format(new Date(Date.UTC(y, m - 1, d)));
+}
+
+// Читаемые книги на панели: № , название, страница и прогресс; щелчок — подставить «книга № N, страница »
+function renderBooks(books) {
+  const box = $("sec-books");
+  if (!books.length) {
+    box.replaceChildren(el("li", { class: "hint" }, "Книг в чтении нет — «зарегистрируй книгу Л.Н. Толстой „Война и мир“»"));
+    return;
+  }
+  box.replaceChildren(...books.map((b) => {
+    const page = b.page != null ? `стр. ${b.page}${b.total_pages ? ` из ${b.total_pages}` : ""}` : "не отмечали";
+    const bar = el("span", { class: "sec-book-bar" }, el("span", { style: `width:${b.percent || 0}%` }));
+    const btn = el("button", { type: "button", class: "sec-book", title: "Отметить страницу",
+      onclick: () => { const q = $("sec-q"); q.value = `книга № ${b.num}, страница `; q.focus(); } },
+      el("b", {}, `№ ${b.num}`), " ", el("span", { class: "sec-book-title" }, b.title),
+      el("span", { class: "sec-book-meta" }, page + (b.last_text ? ` · ${b.last_text}` : "")), b.total_pages ? bar : "");
+    return el("li", {}, btn);
+  }));
 }
 
 function fmtMin(m) {

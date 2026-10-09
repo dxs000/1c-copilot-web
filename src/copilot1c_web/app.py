@@ -480,6 +480,21 @@ def secretary_places(person: str = "", limit: int = 50) -> dict:
     return _core_call("GET", "/secretary/places", params={"person": person, "limit": limit})
 
 
+@app.get("/api/secretary/books")
+def secretary_books(person: str = "") -> dict:
+    return _core_call("GET", "/secretary/books", params={"person": person})
+
+
+@app.get("/api/secretary/books/{book_id}")
+def secretary_book(book_id: int, person: str = "") -> dict:
+    return _core_call("GET", f"/secretary/books/{book_id}", params={"person": person})
+
+
+@app.get("/secretary/books")
+def books_page() -> FileResponse:
+    return FileResponse(STATIC / "books.html")
+
+
 @app.get("/secretary")
 def secretary_page() -> FileResponse:
     return FileResponse(STATIC / "secretary.html")

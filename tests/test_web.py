@@ -454,3 +454,16 @@ def test_secretary_page_and_proxy(monkeypatch, tmp_path):
     assert calls[2][1] == "/secretary/notices/7/read"
     for page in ("/", "/materials", "/issues"):
         assert 'href="/secretary"' in c.get(page).text, page
+
+
+def test_books_page_and_proxy(monkeypatch, tmp_path):
+    c = _client(monkeypatch, tmp_path)
+    r = c.get("/secretary/books")
+    assert r.status_code == 200 and "books-table" in r.text and "/static/books.js" in r.text
+    assert 'href="/secretary/books"' in c.get("/secretary").text
+    calls = []
+    monkeypatch.setattr(web, "_core_call", lambda m, p, **kw: calls.append((m, p, kw)) or {"books": []})
+    c.get("/api/secretary/books", params={"person": "Иван"})
+    c.get("/api/secretary/books/5", params={"person": "Иван"})
+    assert calls == [("GET", "/secretary/books", {"params": {"person": "Иван"}}),
+                     ("GET", "/secretary/books/5", {"params": {"person": "Иван"}})]

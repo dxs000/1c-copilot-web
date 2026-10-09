@@ -471,3 +471,53 @@ body.drawer-open { overflow: hidden; }
   body.app .history, body.app .sec-side { min-height: 0; overflow-y: auto; }
 }
 @media (min-width: 1101px) { body.app .source-panel { position: static; max-height: none; min-height: 0; } }
+
+/* Секретарь: читаемые книги на панели */
+.sec-card-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+.sec-card-head h2 { margin: 0; }
+.sec-card-head a { font-size: 13px; }
+.sec-books { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.sec-books .hint { margin: 0; }
+.sec-book { width: 100%; text-align: left; border: 0; border-radius: 8px; background: transparent; padding: 8px;
+  cursor: pointer; display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: 6px; row-gap: 2px;
+  font-size: 14px; }
+.sec-book:hover { background: var(--line-soft); }
+.sec-book:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.sec-book-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sec-book-meta { grid-column: 1 / -1; font-size: 12px; color: var(--muted); }
+.sec-book-bar, .books-progress { grid-column: 1 / -1; display: block; height: 4px; border-radius: 2px;
+  background: var(--line-soft); overflow: hidden; }
+.sec-book-bar span, .books-progress span { display: block; height: 100%; background: var(--accent); }
+
+/* Книги: таблица и история */
+.books-page { max-width: 1280px; margin: 0 auto; padding: 28px 32px; }
+.books-head { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin-bottom: 8px; }
+.books-head h1 { margin: 0; font-size: 22px; font-weight: 600; }
+.books-head .btn { margin-left: auto; text-decoration: none; color: var(--ink); }
+.books-filter { font-size: 14px; display: flex; align-items: center; gap: 6px; cursor: pointer; }
+.books-card { padding: 0; overflow-x: auto; }
+.books-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+.books-table th { text-align: left; font-size: 12px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;
+  color: var(--muted); padding: 12px 12px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+.books-table td { padding: 12px; border-bottom: 1px solid var(--line-soft); vertical-align: top; }
+.books-table .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.books-table td .hint, .books-table td small { margin: 2px 0 0; display: block; font-size: 12px; }
+.book-row { cursor: pointer; }
+.book-row:hover, .book-row[aria-expanded="true"] { background: var(--surface-2); }
+.book-row:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.book-row.done td { color: var(--muted); }
+.books-progress { min-width: 120px; height: 6px; border-radius: 3px; }
+.book-status { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 12px; background: var(--line-soft);
+  color: var(--muted); white-space: nowrap; }
+.book-status.reading { background: var(--accent-tint); color: var(--accent); }
+.book-status.done { background: var(--ok-tint); color: var(--ok); }
+.history-row > td { background: var(--surface-2); padding: 4px 12px 16px 48px; }
+.history-table { border-collapse: collapse; font-size: 13px; min-width: 420px; }
+.history-table th { text-transform: none; letter-spacing: 0; font-size: 12px; padding: 8px 12px 6px 0; }
+.history-table td { padding: 6px 12px 6px 0; border-bottom: 1px solid var(--line-soft); }
+.history-table .num { text-align: right; }
+.history-table .neg { color: var(--bad); }
+@media (max-width: 900px) {
+  .books-page { padding: 20px 16px; }
+  .history-row > td { padding-left: 12px; }
+}

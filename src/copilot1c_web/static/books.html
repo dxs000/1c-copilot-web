@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Книги — 1С Project Copilot</title>
+<link rel="stylesheet" href="/static/style.css">
+<link rel="icon" href="data:,">
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="/">
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#0B6B63" stroke-width="1.8" aria-hidden="true"><rect x="3" y="4" width="18" height="14" rx="3"/><path d="M8 21h8M8 9h8M8 13h5"/></svg>
+    1С Project Copilot
+  </a>
+  <span class="project">Проект: <b id="project">…</b></span>
+  <nav class="tabs" aria-label="Разделы">
+    <a href="/">Чат</a>
+    <a href="/materials">Входящие</a>
+    <a href="/issues">Обращения</a>
+    <a href="/secretary" aria-current="page">Секретарь</a>
+  </nav>
+  <div class="status" id="status" aria-live="polite"><span class="pill">проверяю систему…</span></div>
+</header>
+
+<main class="books-page">
+  <div class="books-head">
+    <h1>Книги</h1>
+    <span class="hint" id="books-who"></span>
+    <label class="books-filter"><input type="checkbox" id="books-done" checked> показывать прочитанные</label>
+    <a class="btn small" href="/secretary">← Секретарь</a>
+  </div>
+  <p class="hint">Регистрация и отметки — в чате «Секретаря»: «зарегистрируй книгу Л.Н. Толстой „Война и мир“»,
+    «книга № 1, страница 70», «в книге 1 всего 1300 страниц», «дочитал книгу 1». Щелчок по строке — история чтения.</p>
+
+  <div class="card books-card">
+    <table class="books-table" id="books-table">
+      <thead>
+        <tr>
+          <th scope="col" class="num">№</th>
+          <th scope="col">Книга</th>
+          <th scope="col">Статус</th>
+          <th scope="col" class="num">Страница</th>
+          <th scope="col">Прогресс</th>
+          <th scope="col" class="num">За 7 дней</th>
+          <th scope="col" class="num">В день</th>
+          <th scope="col">Последнее чтение</th>
+        </tr>
+      </thead>
+      <tbody id="books-body"><tr><td colspan="8" class="hint">Загружаю…</td></tr></tbody>
+    </table>
+  </div>
+</main>
+<script src="/static/app.js"></script>
+<script src="/static/books.js"></script>
+</body>
+</html>
