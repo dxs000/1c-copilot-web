@@ -13,7 +13,7 @@ const SEC = {
   ending: false,        // отсчёт дошёл до нуля — ждём сообщение ядра
 };
 const POLL_MS = 5000;
-const LOG_MAX = 40;
+const LOG_MAX = 150;
 
 const store = {
   get(key, fallback) {
@@ -40,10 +40,11 @@ const post = (path, body) => secApi(path, { method: "POST", headers: { "Content-
 function addMessage(kind, text, opts = {}) {
   $("sec-empty")?.remove();
   const box = $("sec-messages");
-  const cls = kind === "user" ? "msg-user" : "msg-bot sec-msg" + (kind === "notice" ? " sec-alert" : "") +
-    (kind === "error" ? " error" : "");
+  const cls = kind === "user" ? "msg-user" : kind === "sky" ? "sec-sky" : "msg-bot sec-msg" +
+    (kind === "notice" ? " sec-alert" : "") + (kind === "error" ? " error" : "");
   const node = el("div", { class: cls });
-  if (opts.meta) node.append(el("div", { class: "msg-meta" }, opts.meta));
+  if (kind === "sky") node.append(el("span", { class: "sec-sky-mark", "aria-hidden": "true" }, "✦"));
+  else if (opts.meta) node.append(el("div", { class: "msg-meta" }, opts.meta));
   node.append(el("div", { class: "sec-text" }, text));
   box.append(node);
   node.scrollIntoView({ block: "end", behavior: "smooth" });
@@ -232,6 +233,11 @@ function fmtMin(m) {
 async function deliver(n) {
   if (SEC.shown.has(n.id)) return;
   SEC.shown.add(n.id);
+  if (n.kind === "astro") {  // небо — тихо: без звука и уведомления браузера, строкой в ленте
+    addMessage("sky", n.text);
+    try { await post(`/api/secretary/notices/${n.id}/read`, { person: SEC.person }); } catch (e) { /* покажется снова */ }
+    return;
+  }
   addMessage("notice", n.text, { meta: "Таймер" });
   beep();
   notifyBrowser(n.text);

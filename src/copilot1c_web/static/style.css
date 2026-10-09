@@ -536,3 +536,8 @@ body.drawer-open { overflow: hidden; }
 .toc-current { font-weight: 600; }
 .toc-current .toc-mark { color: var(--accent); }
 @media (max-width: 900px) { .book-detail { grid-template-columns: 1fr; } }
+
+/* Секретарь: тихие сообщения о небе — строкой, без карточки */
+.sec-sky { display: flex; gap: 8px; align-items: baseline; font-size: 13px; color: var(--muted); padding: 0 6px; }
+.sec-sky-mark { color: var(--accent); flex: none; }
+.sec-sky .sec-text { white-space: normal; }
