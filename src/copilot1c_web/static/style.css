@@ -456,3 +456,18 @@ body.drawer-open { overflow: hidden; }
   .sec-side { order: -1; border-left: 0; border-bottom: 1px solid var(--line); }
   .sec-clock { font-size: 36px; }
 }
+
+/* Чат и секретарь — оболочка приложения: шапка и поле ввода на месте, прокручивается только лента сообщений;
+   боковые панели прокручиваются сами по себе. На узком экране — обычная прокрутка страницы. */
+@media (min-width: 901px) {
+  body.app { height: 100vh; height: 100dvh; overflow: hidden; display: flex; flex-direction: column; }
+  body.app > .topbar { flex: none; }
+  body.app > .chat, body.app > .sec { flex: 1 1 auto; min-height: 0; grid-template-rows: minmax(0, 1fr); }
+  body.app .dialog { min-height: 0; overflow: hidden; }
+  /* лента — на всю ширину колонки, чтобы полоса прокрутки была у края; текст по-прежнему не шире 780px */
+  body.app .messages { min-height: 0; overflow-y: auto; overscroll-behavior: contain; max-width: none; margin: 0;
+    padding-left: max(40px, calc((100% - 780px) / 2)); padding-right: max(40px, calc((100% - 780px) / 2)); }
+  body.app .composer { flex: none; }
+  body.app .history, body.app .sec-side { min-height: 0; overflow-y: auto; }
+}
+@media (min-width: 1101px) { body.app .source-panel { position: static; max-height: none; min-height: 0; } }
